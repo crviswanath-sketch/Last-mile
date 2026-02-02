@@ -49,6 +49,25 @@ class DeliveryOutcome(str, Enum):
     NO_RESPONSE = "no_response"
     RESCHEDULED = "rescheduled"
 
+class PickupType(str, Enum):
+    SELLER_PICKUP = "seller_pickup"
+    CUSTOMER_RETURN = "customer_return"
+    PERSONAL_SHOPPING = "personal_shopping"
+
+class PickupStatus(str, Enum):
+    PENDING = "pending"
+    ASSIGNED = "assigned"
+    IN_PROGRESS = "in_progress"
+    COMPLETED = "completed"
+    CANCELLED = "cancelled"
+    PARTIAL = "partial"
+
+class PickupCategory(str, Enum):
+    APPAREL = "apparel"
+    FOOTWEAR = "footwear"
+    ACCESSORIES = "accessories"
+    HANDBAGS = "handbags"
+
 # ==================== MODELS ====================
 
 # Bin Location Models

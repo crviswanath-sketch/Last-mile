@@ -2241,6 +2241,7 @@ const Pickups = () => {
 
   const pickupTypeLabels = {
     seller_pickup: "Seller Pickup",
+    unsubmitted_items: "Unsubmitted Items",
     customer_return: "Customer Return",
     personal_shopping: "Personal Shopping"
   };

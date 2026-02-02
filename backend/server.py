@@ -396,7 +396,9 @@ async def get_shipments(
     status: Optional[ShipmentStatus] = None,
     route: Optional[str] = None,
     champ_id: Optional[str] = None,
-    bin_location_id: Optional[str] = None
+    bin_location_id: Optional[str] = None,
+    inscan_date_from: Optional[str] = None,
+    inscan_date_to: Optional[str] = None
 ):
     query = {}
     if status:
@@ -408,7 +410,17 @@ async def get_shipments(
     if bin_location_id:
         query["bin_location_id"] = bin_location_id
     
-    shipments = await db.shipments.find(query, {"_id": 0}).to_list(1000)
+    # Date range filter for inscan_date
+    if inscan_date_from or inscan_date_to:
+        date_query = {}
+        if inscan_date_from:
+            date_query["$gte"] = inscan_date_from
+        if inscan_date_to:
+            date_query["$lte"] = inscan_date_to
+        if date_query:
+            query["inscan_date"] = date_query
+    
+    shipments = await db.shipments.find(query, {"_id": 0}).sort("created_at", -1).to_list(1000)
     return shipments
 
 @api_router.get("/shipments/{shipment_id}", response_model=Shipment)

@@ -169,8 +169,10 @@ class LastMileDeliveryTester:
         }
         
         success, response = self.run_test("Create Personal Shopping", "POST", "pickups/personal-shopping", 200, personal_shopping_data)
+        personal_shopping_id = None
         if success and 'id' in response:
             pickup_id = response['id']
+            personal_shopping_id = pickup_id
             self.created_ids['pickups'].append(pickup_id)
             print(f"   Created personal shopping with ID: {pickup_id}")
         
@@ -180,13 +182,36 @@ class LastMileDeliveryTester:
             print(f"   Found {len(response)} pickups")
         
         # Test pickup assignment if we have champs and pickups
+        assigned_pickup_id = None
         if self.created_ids['champs'] and self.created_ids['pickups']:
             champ_id = self.created_ids['champs'][0]
             pickup_id = self.created_ids['pickups'][0]
+            assigned_pickup_id = pickup_id
             
             success, _ = self.run_test("Assign Pickup to Champ", "POST", f"pickups/{pickup_id}/assign/{champ_id}", 200)
             if success:
                 print(f"   Successfully assigned pickup {pickup_id} to champ {champ_id}")
+        
+        # NEW FEATURE TESTS - Complete with Proof functionality
+        if assigned_pickup_id:
+            proof_data = {
+                "pickup_id": assigned_pickup_id,
+                "proof_image_base64": "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQH/2wBDAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQH/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAv/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwA/8A==",
+                "latitude": 12.9716,
+                "longitude": 77.5946,
+                "notes": "Test completion with proof",
+                "collected_value": 100.0
+            }
+            
+            success, _ = self.run_test("Complete Pickup with Proof", "POST", f"pickups/{assigned_pickup_id}/complete-with-proof", 200, proof_data)
+            if success:
+                print(f"   Successfully completed pickup {assigned_pickup_id} with proof")
+        
+        # Test Personal Shopping History functionality
+        if personal_shopping_id:
+            success, history_response = self.run_test("Get Personal Shopping History", "GET", f"pickups/{personal_shopping_id}/history", 200)
+            if success:
+                print(f"   Retrieved history for personal shopping pickup: {len(history_response)} entries")
         
         return len(self.created_ids['pickups']) > 0
 

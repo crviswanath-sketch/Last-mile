@@ -2504,6 +2504,7 @@ const Pickups = () => {
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList>
           <TabsTrigger value="seller_pickup">Seller Pickups</TabsTrigger>
+          <TabsTrigger value="unsubmitted_items">Unsubmitted Items</TabsTrigger>
           <TabsTrigger value="customer_return">Customer Returns</TabsTrigger>
           <TabsTrigger value="personal_shopping">Personal Shopping</TabsTrigger>
         </TabsList>

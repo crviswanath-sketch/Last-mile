@@ -2874,6 +2874,406 @@ const Pickups = () => {
   );
 };
 
+// ==================== CHAMP DELIVERY VIEW ====================
+const ChampDeliveryView = () => {
+  const [champId, setChampId] = useState("");
+  const [champs, setChamps] = useState([]);
+  const [shipments, setShipments] = useState([]);
+  const [pickups, setPickups] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [selectedShipment, setSelectedShipment] = useState(null);
+  const [deliveryDialogOpen, setDeliveryDialogOpen] = useState(false);
+  const [deliveryAction, setDeliveryAction] = useState({
+    action: "delivered",
+    proof_image_base64: "",
+    latitude: "",
+    longitude: "",
+    notes: "",
+    payment_collected: "",
+    payment_method_used: "cash",
+    reschedule_date: "",
+    cancellation_reason: ""
+  });
+  const [gettingLocation, setGettingLocation] = useState(false);
+
+  const fetchChamps = useCallback(async () => {
+    try {
+      const response = await axios.get(`${API}/champs`);
+      setChamps(response.data.filter(c => c.is_active));
+    } catch (e) {
+      toast.error("Failed to fetch champs");
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchChamps();
+  }, [fetchChamps]);
+
+  const fetchChampData = async (cid) => {
+    if (!cid) return;
+    setLoading(true);
+    try {
+      const [shipmentsRes, pickupsRes] = await Promise.all([
+        axios.get(`${API}/champ/${cid}/shipments`),
+        axios.get(`${API}/champ/${cid}/pickups`)
+      ]);
+      setShipments(shipmentsRes.data);
+      setPickups(pickupsRes.data);
+    } catch (e) {
+      toast.error("Failed to fetch champ data");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleChampSelect = (cid) => {
+    setChampId(cid);
+    fetchChampData(cid);
+  };
+
+  const handleImageUpload = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setDeliveryAction({ ...deliveryAction, proof_image_base64: reader.result });
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const getCurrentLocation = () => {
+    if (!navigator.geolocation) {
+      toast.error("Geolocation not supported");
+      return;
+    }
+    setGettingLocation(true);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setDeliveryAction({
+          ...deliveryAction,
+          latitude: position.coords.latitude.toFixed(6),
+          longitude: position.coords.longitude.toFixed(6)
+        });
+        toast.success("Location captured!");
+        setGettingLocation(false);
+      },
+      () => {
+        toast.error("Failed to get location");
+        setGettingLocation(false);
+      },
+      { enableHighAccuracy: true, timeout: 15000 }
+    );
+  };
+
+  const handleSubmitDelivery = async () => {
+    try {
+      await axios.post(`${API}/champ/delivery-action`, {
+        shipment_id: selectedShipment.id,
+        action: deliveryAction.action,
+        proof_image_base64: deliveryAction.proof_image_base64,
+        latitude: parseFloat(deliveryAction.latitude) || null,
+        longitude: parseFloat(deliveryAction.longitude) || null,
+        notes: deliveryAction.notes,
+        payment_collected: parseFloat(deliveryAction.payment_collected) || 0,
+        payment_method_used: deliveryAction.action === "delivered" ? deliveryAction.payment_method_used : null,
+        reschedule_date: deliveryAction.action === "rescheduled" ? deliveryAction.reschedule_date : null,
+        cancellation_reason: deliveryAction.action === "cancelled" ? deliveryAction.cancellation_reason : null
+      });
+      toast.success(`Shipment marked as ${deliveryAction.action}!`);
+      setDeliveryDialogOpen(false);
+      setDeliveryAction({
+        action: "delivered",
+        proof_image_base64: "",
+        latitude: "",
+        longitude: "",
+        notes: "",
+        payment_collected: "",
+        payment_method_used: "cash",
+        reschedule_date: "",
+        cancellation_reason: ""
+      });
+      fetchChampData(champId);
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Failed to update shipment");
+    }
+  };
+
+  const openDeliveryDialog = (shipment) => {
+    setSelectedShipment(shipment);
+    setDeliveryAction({
+      action: "delivered",
+      proof_image_base64: "",
+      latitude: "",
+      longitude: "",
+      notes: "",
+      payment_collected: shipment.payment_method !== "prepaid" ? shipment.value.toString() : "",
+      payment_method_used: shipment.payment_method,
+      reschedule_date: "",
+      cancellation_reason: ""
+    });
+    setDeliveryDialogOpen(true);
+  };
+
+  const actionColors = {
+    delivered: "bg-green-500",
+    cancelled: "bg-red-500",
+    rescheduled: "bg-orange-500"
+  };
+
+  return (
+    <div className="space-y-6" data-testid="champ-delivery-view">
+      <h1 className="text-2xl lg:text-3xl font-bold">Champ Delivery View</h1>
+      
+      <div className="flex items-center gap-4">
+        <Label>Select Champ:</Label>
+        <Select value={champId} onValueChange={handleChampSelect}>
+          <SelectTrigger className="w-64" data-testid="champ-select">
+            <SelectValue placeholder="Select a champ" />
+          </SelectTrigger>
+          <SelectContent>
+            {champs.map((champ) => (
+              <SelectItem key={champ.id} value={champ.id}>
+                {champ.name} - {champ.phone}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      {loading ? (
+        <div className="text-center py-8">Loading...</div>
+      ) : champId ? (
+        <div className="space-y-6">
+          {/* Shipments Section */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Package className="h-5 w-5" />
+                Assigned Shipments ({shipments.length})
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {shipments.length === 0 ? (
+                <p className="text-muted-foreground text-center py-4">No shipments assigned</p>
+              ) : (
+                <div className="space-y-3">
+                  {shipments.map((shipment) => (
+                    <div key={shipment.id} className="p-4 border rounded-lg flex items-center justify-between" data-testid={`champ-shipment-${shipment.id}`}>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono font-medium">{shipment.awb}</span>
+                          <Badge className={statusColors[shipment.status]}>{shipment.status.replace("_", " ").toUpperCase()}</Badge>
+                        </div>
+                        <p className="text-sm mt-1">{shipment.recipient_name} - {shipment.recipient_phone}</p>
+                        <p className="text-xs text-muted-foreground">{shipment.recipient_address}</p>
+                        <div className="flex items-center gap-4 mt-2 text-sm">
+                          <span>₹{shipment.value.toFixed(2)}</span>
+                          <Badge variant="outline">{shipment.payment_method.toUpperCase()}</Badge>
+                        </div>
+                      </div>
+                      {!["delivered", "cancelled", "returned_to_wh"].includes(shipment.status) && (
+                        <Button onClick={() => openDeliveryDialog(shipment)} data-testid={`action-btn-${shipment.id}`}>
+                          Take Action
+                        </Button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Pickups Section */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Box className="h-5 w-5" />
+                Assigned Pickups ({pickups.length})
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {pickups.length === 0 ? (
+                <p className="text-muted-foreground text-center py-4">No pickups assigned</p>
+              ) : (
+                <div className="space-y-3">
+                  {pickups.map((pickup) => (
+                    <div key={pickup.id} className="p-4 border rounded-lg" data-testid={`champ-pickup-${pickup.id}`}>
+                      <div className="flex items-center gap-2">
+                        <Badge variant="outline">{pickup.pickup_type.replace("_", " ").toUpperCase()}</Badge>
+                        <Badge className={statusColors[pickup.status] || "bg-gray-500"}>{pickup.status.toUpperCase()}</Badge>
+                      </div>
+                      <p className="font-medium mt-1">{pickup.seller_name || pickup.customer_name}</p>
+                      <p className="text-xs text-muted-foreground">{pickup.seller_address || pickup.customer_address}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      ) : (
+        <Card>
+          <CardContent className="py-12 text-center text-muted-foreground">
+            Select a champ to view their assigned deliveries
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Delivery Action Dialog */}
+      <Dialog open={deliveryDialogOpen} onOpenChange={setDeliveryDialogOpen}>
+        <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Mark Delivery Status</DialogTitle>
+            <DialogDescription>
+              Update the delivery status for {selectedShipment?.awb}
+            </DialogDescription>
+          </DialogHeader>
+          {selectedShipment && (
+            <div className="space-y-4">
+              <div className="p-3 bg-slate-50 rounded-lg">
+                <p className="font-medium">{selectedShipment.recipient_name}</p>
+                <p className="text-sm text-muted-foreground">{selectedShipment.recipient_address}</p>
+                <p className="text-sm font-medium mt-1">Amount: ₹{selectedShipment.value.toFixed(2)} ({selectedShipment.payment_method})</p>
+              </div>
+
+              <div>
+                <Label>Action</Label>
+                <Select value={deliveryAction.action} onValueChange={(v) => setDeliveryAction({ ...deliveryAction, action: v })}>
+                  <SelectTrigger data-testid="delivery-action-select">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="delivered">✅ Delivered</SelectItem>
+                    <SelectItem value="rescheduled">📅 Rescheduled</SelectItem>
+                    <SelectItem value="cancelled">❌ Cancelled</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {deliveryAction.action === "delivered" && selectedShipment.payment_method !== "prepaid" && (
+                <>
+                  <div>
+                    <Label>Payment Collected (₹)</Label>
+                    <Input
+                      type="number"
+                      value={deliveryAction.payment_collected}
+                      onChange={(e) => setDeliveryAction({ ...deliveryAction, payment_collected: e.target.value })}
+                      data-testid="payment-collected"
+                    />
+                  </div>
+                  <div>
+                    <Label>Payment Method</Label>
+                    <Select value={deliveryAction.payment_method_used} onValueChange={(v) => setDeliveryAction({ ...deliveryAction, payment_method_used: v })}>
+                      <SelectTrigger data-testid="payment-method-select">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="cash">Cash</SelectItem>
+                        <SelectItem value="card">Card</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </>
+              )}
+
+              {deliveryAction.action === "rescheduled" && (
+                <div>
+                  <Label>Reschedule Date</Label>
+                  <Input
+                    type="date"
+                    value={deliveryAction.reschedule_date}
+                    onChange={(e) => setDeliveryAction({ ...deliveryAction, reschedule_date: e.target.value })}
+                    data-testid="reschedule-date"
+                  />
+                </div>
+              )}
+
+              {deliveryAction.action === "cancelled" && (
+                <div>
+                  <Label>Cancellation Reason</Label>
+                  <Textarea
+                    value={deliveryAction.cancellation_reason}
+                    onChange={(e) => setDeliveryAction({ ...deliveryAction, cancellation_reason: e.target.value })}
+                    placeholder="Enter reason for cancellation..."
+                    data-testid="cancellation-reason"
+                  />
+                </div>
+              )}
+
+              <div>
+                <Label>Proof Photo</Label>
+                <Input
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  onChange={handleImageUpload}
+                  className="mt-1"
+                  data-testid="delivery-proof-image"
+                />
+                {deliveryAction.proof_image_base64 && (
+                  <img src={deliveryAction.proof_image_base64} alt="Proof" className="mt-2 w-full h-32 object-cover rounded" />
+                )}
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <Label>Latitude</Label>
+                  <Input
+                    value={deliveryAction.latitude}
+                    onChange={(e) => setDeliveryAction({ ...deliveryAction, latitude: e.target.value })}
+                    placeholder="12.9716"
+                    data-testid="delivery-latitude"
+                  />
+                </div>
+                <div>
+                  <Label>Longitude</Label>
+                  <Input
+                    value={deliveryAction.longitude}
+                    onChange={(e) => setDeliveryAction({ ...deliveryAction, longitude: e.target.value })}
+                    placeholder="77.5946"
+                    data-testid="delivery-longitude"
+                  />
+                </div>
+              </div>
+              <Button
+                variant="outline"
+                className="w-full"
+                onClick={getCurrentLocation}
+                disabled={gettingLocation}
+                data-testid="get-delivery-location"
+              >
+                <MapPin className="h-4 w-4 mr-2" />
+                {gettingLocation ? "Getting Location..." : "Get Current Location"}
+              </Button>
+
+              <div>
+                <Label>Notes</Label>
+                <Textarea
+                  value={deliveryAction.notes}
+                  onChange={(e) => setDeliveryAction({ ...deliveryAction, notes: e.target.value })}
+                  placeholder="Any additional notes..."
+                  data-testid="delivery-notes"
+                />
+              </div>
+
+              <Button
+                className={`w-full ${actionColors[deliveryAction.action]} hover:opacity-90`}
+                onClick={handleSubmitDelivery}
+                data-testid="submit-delivery-action"
+              >
+                {deliveryAction.action === "delivered" && "✅ Mark as Delivered"}
+                {deliveryAction.action === "rescheduled" && "📅 Reschedule Delivery"}
+                {deliveryAction.action === "cancelled" && "❌ Cancel Delivery"}
+              </Button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+};
+
 // ==================== NAVIGATION ====================
 const Navigation = ({ isOpen, setIsOpen }) => {
   const navItems = [

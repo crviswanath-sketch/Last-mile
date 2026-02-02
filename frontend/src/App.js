@@ -2440,6 +2440,7 @@ const Navigation = ({ isOpen, setIsOpen }) => {
   const navItems = [
     { path: "/", icon: BarChart3, label: "Dashboard" },
     { path: "/shipments", icon: Package, label: "Shipments" },
+    { path: "/pickups", icon: Box, label: "Pickups" },
     { path: "/bin-locations", icon: MapPin, label: "Bins" },
     { path: "/champs", icon: Users, label: "Champs" },
     { path: "/run-sheets", icon: FileText, label: "Run Sheets" },

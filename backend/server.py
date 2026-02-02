@@ -670,6 +670,161 @@ async def get_undelivered_shipments():
     ).to_list(1000)
     return shipments
 
+# ==================== PICKUP ROUTES ====================
+@api_router.post("/pickups/seller", response_model=Pickup)
+async def create_seller_pickup(input: SellerPickupCreate):
+    total_qty = sum(item.quantity for item in input.pickup_items)
+    pickup = Pickup(
+        pickup_type=PickupType.SELLER_PICKUP,
+        seller_name=input.seller_name,
+        seller_address=input.seller_address,
+        seller_phone=input.seller_phone,
+        pickup_items=[item.model_dump() for item in input.pickup_items],
+        total_value=0
+    )
+    doc = prepare_doc_for_db(pickup.model_dump())
+    await db.pickups.insert_one(doc)
+    return pickup
+
+@api_router.post("/pickups/customer-return", response_model=Pickup)
+async def create_customer_return(input: CustomerReturnCreate):
+    pickup = Pickup(
+        pickup_type=PickupType.CUSTOMER_RETURN,
+        customer_name=input.customer_name,
+        customer_address=input.customer_address,
+        customer_phone=input.customer_phone,
+        notes=f"Original AWB: {input.original_awb}, Reason: {input.return_reason}" if input.original_awb else input.return_reason
+    )
+    doc = prepare_doc_for_db(pickup.model_dump())
+    await db.pickups.insert_one(doc)
+    return pickup
+
+@api_router.post("/pickups/personal-shopping", response_model=Pickup)
+async def create_personal_shopping(input: PersonalShoppingCreate):
+    total_value = sum(item.value for item in input.shopping_items)
+    pickup = Pickup(
+        pickup_type=PickupType.PERSONAL_SHOPPING,
+        customer_name=input.customer_name,
+        customer_address=input.customer_address,
+        customer_phone=input.customer_phone,
+        shopping_items=[item.model_dump() for item in input.shopping_items],
+        total_value=total_value
+    )
+    doc = prepare_doc_for_db(pickup.model_dump())
+    await db.pickups.insert_one(doc)
+    return pickup
+
+@api_router.get("/pickups", response_model=List[Pickup])
+async def get_pickups(
+    pickup_type: Optional[PickupType] = None,
+    status: Optional[PickupStatus] = None
+):
+    query = {}
+    if pickup_type:
+        query["pickup_type"] = pickup_type.value
+    if status:
+        query["status"] = status.value
+    pickups = await db.pickups.find(query, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    return pickups
+
+@api_router.get("/pickups/{pickup_id}", response_model=Pickup)
+async def get_pickup(pickup_id: str):
+    pickup = await db.pickups.find_one({"id": pickup_id}, {"_id": 0})
+    if not pickup:
+        raise HTTPException(status_code=404, detail="Pickup not found")
+    return pickup
+
+@api_router.put("/pickups/{pickup_id}", response_model=Pickup)
+async def update_pickup(pickup_id: str, input: PickupUpdate):
+    update_data = {k: v for k, v in input.model_dump().items() if v is not None}
+    update_data["updated_at"] = datetime.now(timezone.utc).isoformat()
+    
+    # If assigning champ, get champ name
+    if input.champ_id:
+        champ = await db.champs.find_one({"id": input.champ_id}, {"_id": 0})
+        if champ:
+            update_data["champ_name"] = champ["name"]
+    
+    result = await db.pickups.update_one(
+        {"id": pickup_id},
+        {"$set": update_data}
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Pickup not found")
+    
+    pickup = await db.pickups.find_one({"id": pickup_id}, {"_id": 0})
+    return pickup
+
+@api_router.post("/pickups/{pickup_id}/assign/{champ_id}", response_model=Pickup)
+async def assign_pickup_to_champ(pickup_id: str, champ_id: str):
+    champ = await db.champs.find_one({"id": champ_id}, {"_id": 0})
+    if not champ:
+        raise HTTPException(status_code=404, detail="Champ not found")
+    
+    result = await db.pickups.update_one(
+        {"id": pickup_id},
+        {"$set": {
+            "champ_id": champ_id,
+            "champ_name": champ["name"],
+            "status": PickupStatus.ASSIGNED.value,
+            "updated_at": datetime.now(timezone.utc).isoformat()
+        }}
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Pickup not found")
+    
+    pickup = await db.pickups.find_one({"id": pickup_id}, {"_id": 0})
+    return pickup
+
+@api_router.post("/pickups/{pickup_id}/complete", response_model=Pickup)
+async def complete_pickup(pickup_id: str, collected_value: float = 0, partial_items: List[str] = None):
+    pickup = await db.pickups.find_one({"id": pickup_id}, {"_id": 0})
+    if not pickup:
+        raise HTTPException(status_code=404, detail="Pickup not found")
+    
+    update_data = {
+        "status": PickupStatus.COMPLETED.value,
+        "collected_value": collected_value,
+        "updated_at": datetime.now(timezone.utc).isoformat()
+    }
+    
+    # For personal shopping, check if partial delivery
+    if pickup.get("pickup_type") == PickupType.PERSONAL_SHOPPING.value:
+        if collected_value < pickup.get("total_value", 0):
+            update_data["status"] = PickupStatus.PARTIAL.value
+    
+    await db.pickups.update_one({"id": pickup_id}, {"$set": update_data})
+    pickup = await db.pickups.find_one({"id": pickup_id}, {"_id": 0})
+    return pickup
+
+@api_router.put("/pickups/{pickup_id}/shopping-items", response_model=Pickup)
+async def update_shopping_items(pickup_id: str, shopping_items: List[PersonalShoppingItem]):
+    """Update shopping items delivery status for partial delivery"""
+    pickup = await db.pickups.find_one({"id": pickup_id}, {"_id": 0})
+    if not pickup:
+        raise HTTPException(status_code=404, detail="Pickup not found")
+    
+    items_data = [item.model_dump() for item in shopping_items]
+    delivered_value = sum(item.value for item in shopping_items if item.is_delivered)
+    total_value = sum(item.value for item in shopping_items)
+    
+    status = PickupStatus.PARTIAL.value if delivered_value < total_value and delivered_value > 0 else (
+        PickupStatus.COMPLETED.value if delivered_value == total_value else PickupStatus.ASSIGNED.value
+    )
+    
+    await db.pickups.update_one(
+        {"id": pickup_id},
+        {"$set": {
+            "shopping_items": items_data,
+            "collected_value": delivered_value,
+            "status": status,
+            "updated_at": datetime.now(timezone.utc).isoformat()
+        }}
+    )
+    
+    pickup = await db.pickups.find_one({"id": pickup_id}, {"_id": 0})
+    return pickup
+
 # ==================== DASHBOARD STATS ====================
 @api_router.get("/dashboard/stats")
 async def get_dashboard_stats():

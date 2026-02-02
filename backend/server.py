@@ -462,11 +462,14 @@ async def in_scan_shipment(awb: str):
     if shipment["status"] != ShipmentStatus.PENDING_HANDOVER.value:
         raise HTTPException(status_code=400, detail=f"Shipment already in status: {shipment['status']}")
     
+    now = datetime.now(timezone.utc)
     await db.shipments.update_one(
         {"awb": awb},
         {"$set": {
             "status": ShipmentStatus.IN_SCANNED.value,
-            "updated_at": datetime.now(timezone.utc).isoformat()
+            "inscan_date": now.strftime("%Y-%m-%d"),
+            "inscan_time": now.strftime("%H:%M:%S"),
+            "updated_at": now.isoformat()
         }}
     )
     return await get_shipment_by_awb(awb)

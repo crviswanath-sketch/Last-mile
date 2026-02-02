@@ -1,6 +1,4 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, UploadFile, File, Form
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from fastapi.responses import StreamingResponse
+from fastapi import FastAPI, APIRouter, HTTPException, Query
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -11,11 +9,7 @@ from pydantic import BaseModel, Field, ConfigDict
 from typing import List, Optional
 import uuid
 from datetime import datetime, timezone
-import jwt
-import hashlib
-import base64
-import csv
-import io
+from enum import Enum
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -25,759 +19,666 @@ mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
 
-# JWT Configuration
-JWT_SECRET = os.environ.get('JWT_SECRET', 'logitrack-secret-key-2024')
-JWT_ALGORITHM = "HS256"
-
+# Create the main app without a prefix
 app = FastAPI()
-api_router = APIRouter(prefix="/api")
-security = HTTPBearer()
 
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
+# Create a router with the /api prefix
+api_router = APIRouter(prefix="/api")
+
+# ==================== ENUMS ====================
+class ShipmentStatus(str, Enum):
+    PENDING_HANDOVER = "pending_handover"
+    IN_SCANNED = "in_scanned"
+    ASSIGNED_TO_BIN = "assigned_to_bin"
+    ASSIGNED_TO_CHAMP = "assigned_to_champ"
+    OUT_FOR_DELIVERY = "out_for_delivery"
+    DELIVERED = "delivered"
+    CANCELLED = "cancelled"
+    NO_RESPONSE = "no_response"
+    RESCHEDULED = "rescheduled"
+    RETURNED_TO_WH = "returned_to_wh"
+
+class PaymentMethod(str, Enum):
+    CASH = "cash"
+    CARD = "card"
+    PREPAID = "prepaid"
+
+class DeliveryOutcome(str, Enum):
+    DELIVERED = "delivered"
+    CANCELLED = "cancelled"
+    NO_RESPONSE = "no_response"
+    RESCHEDULED = "rescheduled"
 
 # ==================== MODELS ====================
 
-class AdminLogin(BaseModel):
-    username: str
-    password: str
-
-class AdminCreate(BaseModel):
-    username: str
-    password: str
-    name: str
-
-class AdminResponse(BaseModel):
-    id: str
-    username: str
-    name: str
-    token: Optional[str] = None
-
-class DriverCreate(BaseModel):
-    name: str
-    phone: str
-    email: Optional[str] = None
-    vehicle_number: str
-    vehicle_type: str
-
-class DriverUpdate(BaseModel):
-    name: Optional[str] = None
-    phone: Optional[str] = None
-    email: Optional[str] = None
-    vehicle_number: Optional[str] = None
-    vehicle_type: Optional[str] = None
-    status: Optional[str] = None
-
-class DriverResponse(BaseModel):
+# Bin Location Models
+class BinLocation(BaseModel):
     model_config = ConfigDict(extra="ignore")
-    id: str
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    name: str
+    route: str
+    capacity: int = 100
+    current_count: int = 0
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+class BinLocationCreate(BaseModel):
+    name: str
+    route: str
+    capacity: int = 100
+
+# Champ (Delivery Personnel) Models
+class Champ(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     name: str
     phone: str
-    email: Optional[str] = None
-    vehicle_number: str
-    vehicle_type: str
-    status: str
-    total_deliveries: int = 0
-    pending_cod: float = 0.0
-    created_at: str
+    assigned_routes: List[str] = []
+    is_active: bool = True
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+class ChampCreate(BaseModel):
+    name: str
+    phone: str
+    assigned_routes: List[str] = []
+
+# Shipment Models
+class Shipment(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    awb: str  # Air Waybill - unique identifier
+    recipient_name: str
+    recipient_address: str
+    recipient_phone: str
+    route: str
+    payment_method: PaymentMethod
+    value: float
+    status: ShipmentStatus = ShipmentStatus.PENDING_HANDOVER
+    bin_location_id: Optional[str] = None
+    champ_id: Optional[str] = None
+    run_sheet_id: Optional[str] = None
+    delivery_notes: Optional[str] = None
+    rescheduled_date: Optional[str] = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class ShipmentCreate(BaseModel):
-    shipment_type: str  # "delivery" or "pickup"
-    pickup_subtype: Optional[str] = None  # "customer_return" or "pickup" (only for pickup type)
-    customer_name: str
-    customer_phone: str
-    pickup_address: str
-    delivery_address: Optional[str] = None  # Not required for pickup
-    package_description: str
-    number_of_items: int = 1
-    weight: Optional[float] = None
-    is_cod: bool = False
-    cod_amount: float = 0.0
+    awb: str
+    recipient_name: str
+    recipient_address: str
+    recipient_phone: str
+    route: str
+    payment_method: PaymentMethod
+    value: float
 
 class ShipmentUpdate(BaseModel):
-    customer_name: Optional[str] = None
-    customer_phone: Optional[str] = None
-    pickup_address: Optional[str] = None
-    delivery_address: Optional[str] = None
-    package_description: Optional[str] = None
-    number_of_items: Optional[int] = None
-    weight: Optional[float] = None
-    is_cod: Optional[bool] = None
-    cod_amount: Optional[float] = None
-    status: Optional[str] = None
-    driver_id: Optional[str] = None
-
-class DeliveryProof(BaseModel):
-    shipment_id: str
-    image_base64: str
-    latitude: float
-    longitude: float
-    notes: Optional[str] = None
-
-class CODReconciliation(BaseModel):
-    shipment_id: str
-    amount_collected: float
-    reconciliation_notes: Optional[str] = None
-
-class FollowUp(BaseModel):
-    shipment_id: str
-    notes: str
-    follow_up_date: Optional[str] = None
-
-class RescheduleRequest(BaseModel):
-    reschedule_date: str
-    reschedule_time: Optional[str] = None
-    reason: Optional[str] = None
-
-class ShipmentResponse(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-    id: str
-    tracking_number: str
-    shipment_type: str = "delivery"
-    pickup_subtype: Optional[str] = None
-    customer_name: str
-    customer_phone: str
-    pickup_address: str
-    delivery_address: Optional[str] = None
-    package_description: str
-    number_of_items: int = 1
-    weight: Optional[float] = None
-    is_cod: bool
-    cod_amount: float
-    cod_collected: bool
-    cod_reconciled: bool
-    status: str
-    driver_id: Optional[str] = None
-    driver_name: Optional[str] = None
-    delivery_proof_image: Optional[str] = None
-    delivery_latitude: Optional[float] = None
-    delivery_longitude: Optional[float] = None
+    status: Optional[ShipmentStatus] = None
+    bin_location_id: Optional[str] = None
+    champ_id: Optional[str] = None
     delivery_notes: Optional[str] = None
-    delivered_at: Optional[str] = None
-    completed_at: Optional[str] = None
-    reschedule_date: Optional[str] = None
-    reschedule_time: Optional[str] = None
-    reschedule_reason: Optional[str] = None
-    follow_ups: List[dict] = []
-    created_at: str
-    updated_at: str
+    rescheduled_date: Optional[str] = None
 
-class DashboardStats(BaseModel):
-    total_shipments: int
-    pending_shipments: int
-    in_transit: int
-    delivered: int
-    total_drivers: int
-    active_drivers: int
-    total_cod_amount: float
-    pending_cod_amount: float
-    reconciled_cod_amount: float
+# Run Sheet Models
+class RunSheet(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    champ_id: str
+    champ_name: str
+    shipment_ids: List[str] = []
+    total_value: float = 0
+    cash_to_collect: float = 0
+    card_to_collect: float = 0
+    is_scanned_out: bool = False
+    is_scanned_in: bool = False
+    scanned_out_at: Optional[str] = None
+    scanned_in_at: Optional[str] = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
-# ==================== AUTH HELPERS ====================
+class RunSheetCreate(BaseModel):
+    champ_id: str
+    shipment_ids: List[str]
 
-def hash_password(password: str) -> str:
-    return hashlib.sha256(password.encode()).hexdigest()
+# Delivery Attempt Models
+class DeliveryAttempt(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    shipment_id: str
+    run_sheet_id: str
+    champ_id: str
+    outcome: DeliveryOutcome
+    payment_collected: float = 0
+    payment_method_used: Optional[PaymentMethod] = None
+    notes: Optional[str] = None
+    rescheduled_date: Optional[str] = None
+    attempted_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
-def create_token(admin_id: str, username: str) -> str:
-    payload = {
-        "admin_id": admin_id,
-        "username": username,
-        "exp": datetime.now(timezone.utc).timestamp() + 86400  # 24 hours
-    }
-    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+class DeliveryAttemptCreate(BaseModel):
+    shipment_id: str
+    run_sheet_id: str
+    outcome: DeliveryOutcome
+    payment_collected: float = 0
+    payment_method_used: Optional[PaymentMethod] = None
+    notes: Optional[str] = None
+    rescheduled_date: Optional[str] = None
 
-async def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)):
-    try:
-        payload = jwt.decode(credentials.credentials, JWT_SECRET, algorithms=[JWT_ALGORITHM])
-        return payload
-    except jwt.ExpiredSignatureError:
-        raise HTTPException(status_code=401, detail="Token expired")
-    except jwt.InvalidTokenError:
-        raise HTTPException(status_code=401, detail="Invalid token")
+# ==================== HELPER FUNCTIONS ====================
+def serialize_datetime(obj):
+    """Convert datetime objects to ISO string for MongoDB storage"""
+    if isinstance(obj, datetime):
+        return obj.isoformat()
+    return obj
 
-# ==================== AUTH ENDPOINTS ====================
+def prepare_doc_for_db(doc: dict) -> dict:
+    """Prepare document for MongoDB by converting datetime fields"""
+    for key, value in doc.items():
+        if isinstance(value, datetime):
+            doc[key] = value.isoformat()
+    return doc
 
-@api_router.post("/auth/register", response_model=AdminResponse)
-async def register_admin(data: AdminCreate):
-    existing = await db.admins.find_one({"username": data.username})
-    if existing:
-        raise HTTPException(status_code=400, detail="Username already exists")
-    
-    admin_id = str(uuid.uuid4())
-    admin_doc = {
-        "id": admin_id,
-        "username": data.username,
-        "password": hash_password(data.password),
-        "name": data.name,
-        "created_at": datetime.now(timezone.utc).isoformat()
-    }
-    await db.admins.insert_one(admin_doc)
-    
-    token = create_token(admin_id, data.username)
-    return AdminResponse(id=admin_id, username=data.username, name=data.name, token=token)
+# ==================== BIN LOCATION ROUTES ====================
+@api_router.post("/bin-locations", response_model=BinLocation)
+async def create_bin_location(input: BinLocationCreate):
+    bin_loc = BinLocation(**input.model_dump())
+    doc = prepare_doc_for_db(bin_loc.model_dump())
+    await db.bin_locations.insert_one(doc)
+    return bin_loc
 
-@api_router.post("/auth/login", response_model=AdminResponse)
-async def login_admin(data: AdminLogin):
-    admin = await db.admins.find_one({"username": data.username}, {"_id": 0})
-    if not admin or admin["password"] != hash_password(data.password):
-        raise HTTPException(status_code=401, detail="Invalid credentials")
-    
-    token = create_token(admin["id"], admin["username"])
-    return AdminResponse(id=admin["id"], username=admin["username"], name=admin["name"], token=token)
+@api_router.get("/bin-locations", response_model=List[BinLocation])
+async def get_bin_locations(route: Optional[str] = None):
+    query = {} if not route else {"route": route}
+    locations = await db.bin_locations.find(query, {"_id": 0}).to_list(1000)
+    return locations
 
-@api_router.get("/auth/me", response_model=AdminResponse)
-async def get_current_admin(payload: dict = Depends(verify_token)):
-    admin = await db.admins.find_one({"id": payload["admin_id"]}, {"_id": 0, "password": 0})
-    if not admin:
-        raise HTTPException(status_code=404, detail="Admin not found")
-    return AdminResponse(**admin)
+@api_router.get("/bin-locations/{bin_id}", response_model=BinLocation)
+async def get_bin_location(bin_id: str):
+    location = await db.bin_locations.find_one({"id": bin_id}, {"_id": 0})
+    if not location:
+        raise HTTPException(status_code=404, detail="Bin location not found")
+    return location
 
-# ==================== DRIVER ENDPOINTS ====================
+# ==================== CHAMP ROUTES ====================
+@api_router.post("/champs", response_model=Champ)
+async def create_champ(input: ChampCreate):
+    champ = Champ(**input.model_dump())
+    doc = prepare_doc_for_db(champ.model_dump())
+    await db.champs.insert_one(doc)
+    return champ
 
-@api_router.post("/drivers", response_model=DriverResponse)
-async def create_driver(data: DriverCreate, payload: dict = Depends(verify_token)):
-    driver_id = str(uuid.uuid4())
-    driver_doc = {
-        "id": driver_id,
-        "name": data.name,
-        "phone": data.phone,
-        "email": data.email,
-        "vehicle_number": data.vehicle_number,
-        "vehicle_type": data.vehicle_type,
-        "status": "active",
-        "total_deliveries": 0,
-        "pending_cod": 0.0,
-        "created_at": datetime.now(timezone.utc).isoformat()
-    }
-    await db.drivers.insert_one(driver_doc)
-    return DriverResponse(**driver_doc)
+@api_router.get("/champs", response_model=List[Champ])
+async def get_champs(is_active: Optional[bool] = None):
+    query = {} if is_active is None else {"is_active": is_active}
+    champs = await db.champs.find(query, {"_id": 0}).to_list(1000)
+    return champs
 
-@api_router.get("/drivers", response_model=List[DriverResponse])
-async def get_drivers(payload: dict = Depends(verify_token)):
-    drivers = await db.drivers.find({}, {"_id": 0}).to_list(1000)
-    return [DriverResponse(**d) for d in drivers]
+@api_router.get("/champs/{champ_id}", response_model=Champ)
+async def get_champ(champ_id: str):
+    champ = await db.champs.find_one({"id": champ_id}, {"_id": 0})
+    if not champ:
+        raise HTTPException(status_code=404, detail="Champ not found")
+    return champ
 
-@api_router.get("/drivers/{driver_id}", response_model=DriverResponse)
-async def get_driver(driver_id: str, payload: dict = Depends(verify_token)):
-    driver = await db.drivers.find_one({"id": driver_id}, {"_id": 0})
-    if not driver:
-        raise HTTPException(status_code=404, detail="Driver not found")
-    return DriverResponse(**driver)
-
-@api_router.put("/drivers/{driver_id}", response_model=DriverResponse)
-async def update_driver(driver_id: str, data: DriverUpdate, payload: dict = Depends(verify_token)):
-    update_data = {k: v for k, v in data.model_dump().items() if v is not None}
-    if not update_data:
-        raise HTTPException(status_code=400, detail="No update data provided")
-    
-    result = await db.drivers.update_one({"id": driver_id}, {"$set": update_data})
+@api_router.put("/champs/{champ_id}", response_model=Champ)
+async def update_champ(champ_id: str, input: ChampCreate):
+    result = await db.champs.update_one(
+        {"id": champ_id},
+        {"$set": input.model_dump()}
+    )
     if result.matched_count == 0:
-        raise HTTPException(status_code=404, detail="Driver not found")
+        raise HTTPException(status_code=404, detail="Champ not found")
+    return await get_champ(champ_id)
+
+# ==================== SHIPMENT ROUTES ====================
+@api_router.post("/shipments", response_model=Shipment)
+async def create_shipment(input: ShipmentCreate):
+    # Check if AWB already exists
+    existing = await db.shipments.find_one({"awb": input.awb})
+    if existing:
+        raise HTTPException(status_code=400, detail="AWB already exists")
     
-    driver = await db.drivers.find_one({"id": driver_id}, {"_id": 0})
-    return DriverResponse(**driver)
+    shipment = Shipment(**input.model_dump())
+    doc = prepare_doc_for_db(shipment.model_dump())
+    await db.shipments.insert_one(doc)
+    return shipment
 
-@api_router.delete("/drivers/{driver_id}")
-async def delete_driver(driver_id: str, payload: dict = Depends(verify_token)):
-    result = await db.drivers.delete_one({"id": driver_id})
-    if result.deleted_count == 0:
-        raise HTTPException(status_code=404, detail="Driver not found")
-    return {"message": "Driver deleted successfully"}
+@api_router.post("/shipments/bulk", response_model=List[Shipment])
+async def create_shipments_bulk(inputs: List[ShipmentCreate]):
+    shipments = []
+    for input in inputs:
+        existing = await db.shipments.find_one({"awb": input.awb})
+        if not existing:
+            shipment = Shipment(**input.model_dump())
+            doc = prepare_doc_for_db(shipment.model_dump())
+            await db.shipments.insert_one(doc)
+            shipments.append(shipment)
+    return shipments
 
-# ==================== SHIPMENT ENDPOINTS ====================
-
-def generate_tracking_number():
-    return f"LT{datetime.now().strftime('%Y%m%d')}{str(uuid.uuid4())[:8].upper()}"
-
-@api_router.post("/shipments", response_model=ShipmentResponse)
-async def create_shipment(data: ShipmentCreate, payload: dict = Depends(verify_token)):
-    shipment_id = str(uuid.uuid4())
-    now = datetime.now(timezone.utc).isoformat()
-    
-    shipment_doc = {
-        "id": shipment_id,
-        "tracking_number": generate_tracking_number(),
-        "shipment_type": data.shipment_type,
-        "pickup_subtype": data.pickup_subtype if data.shipment_type == "pickup" else None,
-        "customer_name": data.customer_name,
-        "customer_phone": data.customer_phone,
-        "pickup_address": data.pickup_address,
-        "delivery_address": data.delivery_address if data.shipment_type == "delivery" else None,
-        "package_description": data.package_description,
-        "number_of_items": data.number_of_items,
-        "weight": data.weight,
-        "is_cod": data.is_cod if data.shipment_type == "delivery" else False,
-        "cod_amount": data.cod_amount if (data.is_cod and data.shipment_type == "delivery") else 0.0,
-        "cod_collected": False,
-        "cod_reconciled": False,
-        "status": "pending",
-        "driver_id": None,
-        "driver_name": None,
-        "delivery_proof_image": None,
-        "delivery_latitude": None,
-        "delivery_longitude": None,
-        "delivery_notes": None,
-        "delivered_at": None,
-        "completed_at": None,
-        "reschedule_date": None,
-        "reschedule_time": None,
-        "reschedule_reason": None,
-        "follow_ups": [],
-        "created_at": now,
-        "updated_at": now
-    }
-    await db.shipments.insert_one(shipment_doc)
-    return ShipmentResponse(**shipment_doc)
-
-@api_router.get("/shipments", response_model=List[ShipmentResponse])
-async def get_shipments(status: Optional[str] = None, driver_id: Optional[str] = None, payload: dict = Depends(verify_token)):
+@api_router.get("/shipments", response_model=List[Shipment])
+async def get_shipments(
+    status: Optional[ShipmentStatus] = None,
+    route: Optional[str] = None,
+    champ_id: Optional[str] = None,
+    bin_location_id: Optional[str] = None
+):
     query = {}
     if status:
-        query["status"] = status
-    if driver_id:
-        query["driver_id"] = driver_id
+        query["status"] = status.value
+    if route:
+        query["route"] = route
+    if champ_id:
+        query["champ_id"] = champ_id
+    if bin_location_id:
+        query["bin_location_id"] = bin_location_id
     
-    shipments = await db.shipments.find(query, {"_id": 0}).sort("created_at", -1).to_list(1000)
-    return [ShipmentResponse(**s) for s in shipments]
+    shipments = await db.shipments.find(query, {"_id": 0}).to_list(1000)
+    return shipments
 
-@api_router.get("/shipments/{shipment_id}", response_model=ShipmentResponse)
-async def get_shipment(shipment_id: str, payload: dict = Depends(verify_token)):
+@api_router.get("/shipments/{shipment_id}", response_model=Shipment)
+async def get_shipment(shipment_id: str):
     shipment = await db.shipments.find_one({"id": shipment_id}, {"_id": 0})
     if not shipment:
         raise HTTPException(status_code=404, detail="Shipment not found")
-    return ShipmentResponse(**shipment)
+    return shipment
 
-@api_router.put("/shipments/{shipment_id}", response_model=ShipmentResponse)
-async def update_shipment(shipment_id: str, data: ShipmentUpdate, payload: dict = Depends(verify_token)):
-    update_data = {k: v for k, v in data.model_dump().items() if v is not None}
-    if not update_data:
-        raise HTTPException(status_code=400, detail="No update data provided")
-    
+@api_router.get("/shipments/awb/{awb}", response_model=Shipment)
+async def get_shipment_by_awb(awb: str):
+    shipment = await db.shipments.find_one({"awb": awb}, {"_id": 0})
+    if not shipment:
+        raise HTTPException(status_code=404, detail="Shipment not found")
+    return shipment
+
+@api_router.put("/shipments/{shipment_id}", response_model=Shipment)
+async def update_shipment(shipment_id: str, input: ShipmentUpdate):
+    update_data = {k: v for k, v in input.model_dump().items() if v is not None}
     update_data["updated_at"] = datetime.now(timezone.utc).isoformat()
     
-    # If assigning driver, get driver name
-    if "driver_id" in update_data and update_data["driver_id"]:
-        driver = await db.drivers.find_one({"id": update_data["driver_id"]}, {"_id": 0})
-        if driver:
-            update_data["driver_name"] = driver["name"]
-            if update_data.get("status") is None:
-                update_data["status"] = "assigned"
-    
-    result = await db.shipments.update_one({"id": shipment_id}, {"$set": update_data})
+    result = await db.shipments.update_one(
+        {"id": shipment_id},
+        {"$set": update_data}
+    )
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Shipment not found")
-    
-    shipment = await db.shipments.find_one({"id": shipment_id}, {"_id": 0})
-    return ShipmentResponse(**shipment)
+    return await get_shipment(shipment_id)
 
-@api_router.post("/shipments/{shipment_id}/assign/{driver_id}", response_model=ShipmentResponse)
-async def assign_driver(shipment_id: str, driver_id: str, payload: dict = Depends(verify_token)):
-    driver = await db.drivers.find_one({"id": driver_id}, {"_id": 0})
-    if not driver:
-        raise HTTPException(status_code=404, detail="Driver not found")
-    
-    update_data = {
-        "driver_id": driver_id,
-        "driver_name": driver["name"],
-        "status": "assigned",
-        "updated_at": datetime.now(timezone.utc).isoformat()
-    }
-    
-    result = await db.shipments.update_one({"id": shipment_id}, {"$set": update_data})
-    if result.matched_count == 0:
-        raise HTTPException(status_code=404, detail="Shipment not found")
-    
-    shipment = await db.shipments.find_one({"id": shipment_id}, {"_id": 0})
-    return ShipmentResponse(**shipment)
+# ==================== LOGISTICS OPERATIONS ====================
 
-@api_router.post("/shipments/{shipment_id}/unassign", response_model=ShipmentResponse)
-async def unassign_driver(shipment_id: str, payload: dict = Depends(verify_token)):
-    shipment = await db.shipments.find_one({"id": shipment_id}, {"_id": 0})
+# Step 1: In-Scan shipment (Warehouse to Logistics)
+@api_router.post("/logistics/in-scan/{awb}", response_model=Shipment)
+async def in_scan_shipment(awb: str):
+    shipment = await db.shipments.find_one({"awb": awb}, {"_id": 0})
     if not shipment:
         raise HTTPException(status_code=404, detail="Shipment not found")
     
-    update_data = {
-        "driver_id": None,
-        "driver_name": None,
-        "status": "pending",
-        "updated_at": datetime.now(timezone.utc).isoformat()
-    }
-    
-    await db.shipments.update_one({"id": shipment_id}, {"$set": update_data})
-    shipment = await db.shipments.find_one({"id": shipment_id}, {"_id": 0})
-    return ShipmentResponse(**shipment)
-
-@api_router.delete("/shipments/{shipment_id}")
-async def delete_shipment(shipment_id: str, payload: dict = Depends(verify_token)):
-    result = await db.shipments.delete_one({"id": shipment_id})
-    if result.deleted_count == 0:
-        raise HTTPException(status_code=404, detail="Shipment not found")
-    return {"message": "Shipment deleted successfully"}
-
-# ==================== MARK AS DELIVERED / PICKUP COMPLETED ====================
-
-@api_router.post("/shipments/{shipment_id}/mark-delivered", response_model=ShipmentResponse)
-async def mark_as_delivered(shipment_id: str, payload: dict = Depends(verify_token)):
-    shipment = await db.shipments.find_one({"id": shipment_id}, {"_id": 0})
-    if not shipment:
-        raise HTTPException(status_code=404, detail="Shipment not found")
-    
-    if shipment.get("shipment_type") != "delivery":
-        raise HTTPException(status_code=400, detail="This action is only for delivery shipments")
-    
-    now = datetime.now(timezone.utc).isoformat()
-    update_data = {
-        "status": "delivered",
-        "delivered_at": now,
-        "completed_at": now,
-        "updated_at": now
-    }
-    
-    # If COD, mark as collected
-    if shipment.get("is_cod"):
-        update_data["cod_collected"] = True
-        if shipment.get("driver_id"):
-            await db.drivers.update_one(
-                {"id": shipment["driver_id"]},
-                {"$inc": {"pending_cod": shipment["cod_amount"], "total_deliveries": 1}}
-            )
-    else:
-        if shipment.get("driver_id"):
-            await db.drivers.update_one(
-                {"id": shipment["driver_id"]},
-                {"$inc": {"total_deliveries": 1}}
-            )
-    
-    await db.shipments.update_one({"id": shipment_id}, {"$set": update_data})
-    shipment = await db.shipments.find_one({"id": shipment_id}, {"_id": 0})
-    return ShipmentResponse(**shipment)
-
-@api_router.post("/shipments/{shipment_id}/pickup-completed", response_model=ShipmentResponse)
-async def mark_pickup_completed(shipment_id: str, payload: dict = Depends(verify_token)):
-    shipment = await db.shipments.find_one({"id": shipment_id}, {"_id": 0})
-    if not shipment:
-        raise HTTPException(status_code=404, detail="Shipment not found")
-    
-    if shipment.get("shipment_type") != "pickup":
-        raise HTTPException(status_code=400, detail="This action is only for pickup shipments")
-    
-    now = datetime.now(timezone.utc).isoformat()
-    update_data = {
-        "status": "completed",
-        "completed_at": now,
-        "updated_at": now
-    }
-    
-    if shipment.get("driver_id"):
-        await db.drivers.update_one(
-            {"id": shipment["driver_id"]},
-            {"$inc": {"total_deliveries": 1}}
-        )
-    
-    await db.shipments.update_one({"id": shipment_id}, {"$set": update_data})
-    shipment = await db.shipments.find_one({"id": shipment_id}, {"_id": 0})
-    return ShipmentResponse(**shipment)
-
-@api_router.post("/shipments/{shipment_id}/reschedule", response_model=ShipmentResponse)
-async def reschedule_shipment(shipment_id: str, data: RescheduleRequest, payload: dict = Depends(verify_token)):
-    shipment = await db.shipments.find_one({"id": shipment_id}, {"_id": 0})
-    if not shipment:
-        raise HTTPException(status_code=404, detail="Shipment not found")
-    
-    now = datetime.now(timezone.utc).isoformat()
-    update_data = {
-        "status": "rescheduled",
-        "reschedule_date": data.reschedule_date,
-        "reschedule_time": data.reschedule_time,
-        "reschedule_reason": data.reason,
-        "updated_at": now
-    }
-    
-    await db.shipments.update_one({"id": shipment_id}, {"$set": update_data})
-    shipment = await db.shipments.find_one({"id": shipment_id}, {"_id": 0})
-    return ShipmentResponse(**shipment)
-
-# ==================== DELIVERY PROOF ENDPOINT ====================
-
-@api_router.post("/shipments/{shipment_id}/delivery-proof", response_model=ShipmentResponse)
-async def submit_delivery_proof(shipment_id: str, data: DeliveryProof, payload: dict = Depends(verify_token)):
-    shipment = await db.shipments.find_one({"id": shipment_id}, {"_id": 0})
-    if not shipment:
-        raise HTTPException(status_code=404, detail="Shipment not found")
-    
-    now = datetime.now(timezone.utc).isoformat()
-    update_data = {
-        "delivery_proof_image": data.image_base64,
-        "delivery_latitude": data.latitude,
-        "delivery_longitude": data.longitude,
-        "delivery_notes": data.notes,
-        "delivered_at": now,
-        "status": "delivered",
-        "updated_at": now
-    }
-    
-    # If COD, mark as collected
-    if shipment.get("is_cod"):
-        update_data["cod_collected"] = True
-        # Update driver's pending COD
-        if shipment.get("driver_id"):
-            await db.drivers.update_one(
-                {"id": shipment["driver_id"]},
-                {
-                    "$inc": {"pending_cod": shipment["cod_amount"], "total_deliveries": 1}
-                }
-            )
-    else:
-        # Update driver's delivery count
-        if shipment.get("driver_id"):
-            await db.drivers.update_one(
-                {"id": shipment["driver_id"]},
-                {"$inc": {"total_deliveries": 1}}
-            )
-    
-    await db.shipments.update_one({"id": shipment_id}, {"$set": update_data})
-    shipment = await db.shipments.find_one({"id": shipment_id}, {"_id": 0})
-    return ShipmentResponse(**shipment)
-
-# ==================== COD RECONCILIATION ====================
-
-@api_router.post("/shipments/{shipment_id}/reconcile", response_model=ShipmentResponse)
-async def reconcile_cod(shipment_id: str, data: CODReconciliation, payload: dict = Depends(verify_token)):
-    shipment = await db.shipments.find_one({"id": shipment_id}, {"_id": 0})
-    if not shipment:
-        raise HTTPException(status_code=404, detail="Shipment not found")
-    
-    if not shipment.get("is_cod"):
-        raise HTTPException(status_code=400, detail="This shipment is not COD")
-    
-    if not shipment.get("cod_collected"):
-        raise HTTPException(status_code=400, detail="COD not yet collected")
-    
-    now = datetime.now(timezone.utc).isoformat()
-    update_data = {
-        "cod_reconciled": True,
-        "reconciliation_notes": data.reconciliation_notes,
-        "reconciled_at": now,
-        "updated_at": now
-    }
-    
-    # Update driver's pending COD
-    if shipment.get("driver_id"):
-        await db.drivers.update_one(
-            {"id": shipment["driver_id"]},
-            {"$inc": {"pending_cod": -data.amount_collected}}
-        )
-    
-    await db.shipments.update_one({"id": shipment_id}, {"$set": update_data})
-    shipment = await db.shipments.find_one({"id": shipment_id}, {"_id": 0})
-    return ShipmentResponse(**shipment)
-
-@api_router.get("/cod/pending", response_model=List[ShipmentResponse])
-async def get_pending_cod(payload: dict = Depends(verify_token)):
-    shipments = await db.shipments.find(
-        {"is_cod": True, "cod_collected": True, "cod_reconciled": False},
-        {"_id": 0}
-    ).to_list(1000)
-    return [ShipmentResponse(**s) for s in shipments]
-
-# ==================== FOLLOW-UP ENDPOINTS ====================
-
-@api_router.post("/shipments/{shipment_id}/follow-up", response_model=ShipmentResponse)
-async def add_follow_up(shipment_id: str, data: FollowUp, payload: dict = Depends(verify_token)):
-    shipment = await db.shipments.find_one({"id": shipment_id}, {"_id": 0})
-    if not shipment:
-        raise HTTPException(status_code=404, detail="Shipment not found")
-    
-    follow_up = {
-        "id": str(uuid.uuid4()),
-        "notes": data.notes,
-        "follow_up_date": data.follow_up_date,
-        "created_at": datetime.now(timezone.utc).isoformat(),
-        "created_by": payload["username"]
-    }
+    if shipment["status"] != ShipmentStatus.PENDING_HANDOVER.value:
+        raise HTTPException(status_code=400, detail=f"Shipment already in status: {shipment['status']}")
     
     await db.shipments.update_one(
-        {"id": shipment_id},
-        {
-            "$push": {"follow_ups": follow_up},
-            "$set": {"updated_at": datetime.now(timezone.utc).isoformat()}
-        }
+        {"awb": awb},
+        {"$set": {
+            "status": ShipmentStatus.IN_SCANNED.value,
+            "updated_at": datetime.now(timezone.utc).isoformat()
+        }}
+    )
+    return await get_shipment_by_awb(awb)
+
+# Step 2: Assign to Bin Location based on Route
+@api_router.post("/logistics/assign-bin", response_model=List[Shipment])
+async def assign_to_bin(shipment_ids: List[str], bin_location_id: str):
+    # Verify bin location exists
+    bin_loc = await db.bin_locations.find_one({"id": bin_location_id}, {"_id": 0})
+    if not bin_loc:
+        raise HTTPException(status_code=404, detail="Bin location not found")
+    
+    updated_shipments = []
+    for sid in shipment_ids:
+        result = await db.shipments.update_one(
+            {"id": sid, "status": ShipmentStatus.IN_SCANNED.value},
+            {"$set": {
+                "bin_location_id": bin_location_id,
+                "status": ShipmentStatus.ASSIGNED_TO_BIN.value,
+                "updated_at": datetime.now(timezone.utc).isoformat()
+            }}
+        )
+        if result.modified_count > 0:
+            shipment = await db.shipments.find_one({"id": sid}, {"_id": 0})
+            updated_shipments.append(shipment)
+    
+    # Update bin location count
+    await db.bin_locations.update_one(
+        {"id": bin_location_id},
+        {"$inc": {"current_count": len(updated_shipments)}}
     )
     
-    shipment = await db.shipments.find_one({"id": shipment_id}, {"_id": 0})
-    return ShipmentResponse(**shipment)
+    return updated_shipments
+
+# Step 3: Assign to Champ (AWB wise)
+@api_router.post("/logistics/assign-champ", response_model=List[Shipment])
+async def assign_to_champ(shipment_ids: List[str], champ_id: str):
+    # Verify champ exists
+    champ = await db.champs.find_one({"id": champ_id}, {"_id": 0})
+    if not champ:
+        raise HTTPException(status_code=404, detail="Champ not found")
+    
+    updated_shipments = []
+    for sid in shipment_ids:
+        result = await db.shipments.update_one(
+            {"id": sid, "status": {"$in": [ShipmentStatus.ASSIGNED_TO_BIN.value, ShipmentStatus.RESCHEDULED.value, ShipmentStatus.RETURNED_TO_WH.value]}},
+            {"$set": {
+                "champ_id": champ_id,
+                "status": ShipmentStatus.ASSIGNED_TO_CHAMP.value,
+                "updated_at": datetime.now(timezone.utc).isoformat()
+            }}
+        )
+        if result.modified_count > 0:
+            shipment = await db.shipments.find_one({"id": sid}, {"_id": 0})
+            updated_shipments.append(shipment)
+    
+    return updated_shipments
+
+# ==================== RUN SHEET ROUTES ====================
+
+# Step 4: Generate Run Sheet
+@api_router.post("/run-sheets", response_model=RunSheet)
+async def create_run_sheet(input: RunSheetCreate):
+    # Verify champ exists
+    champ = await db.champs.find_one({"id": input.champ_id}, {"_id": 0})
+    if not champ:
+        raise HTTPException(status_code=404, detail="Champ not found")
+    
+    # Get shipments and calculate totals
+    shipments = await db.shipments.find(
+        {"id": {"$in": input.shipment_ids}, "champ_id": input.champ_id},
+        {"_id": 0}
+    ).to_list(1000)
+    
+    if not shipments:
+        raise HTTPException(status_code=400, detail="No valid shipments found for this champ")
+    
+    total_value = sum(s["value"] for s in shipments)
+    cash_to_collect = sum(s["value"] for s in shipments if s["payment_method"] == PaymentMethod.CASH.value)
+    card_to_collect = sum(s["value"] for s in shipments if s["payment_method"] == PaymentMethod.CARD.value)
+    
+    run_sheet = RunSheet(
+        champ_id=input.champ_id,
+        champ_name=champ["name"],
+        shipment_ids=[s["id"] for s in shipments],
+        total_value=total_value,
+        cash_to_collect=cash_to_collect,
+        card_to_collect=card_to_collect
+    )
+    
+    doc = prepare_doc_for_db(run_sheet.model_dump())
+    await db.run_sheets.insert_one(doc)
+    
+    # Update shipments with run sheet ID
+    for s in shipments:
+        await db.shipments.update_one(
+            {"id": s["id"]},
+            {"$set": {"run_sheet_id": run_sheet.id}}
+        )
+    
+    return run_sheet
+
+@api_router.get("/run-sheets", response_model=List[RunSheet])
+async def get_run_sheets(champ_id: Optional[str] = None, is_active: Optional[bool] = None):
+    query = {}
+    if champ_id:
+        query["champ_id"] = champ_id
+    if is_active is not None:
+        if is_active:
+            query["is_scanned_in"] = False
+        else:
+            query["is_scanned_in"] = True
+    
+    run_sheets = await db.run_sheets.find(query, {"_id": 0}).to_list(1000)
+    return run_sheets
+
+@api_router.get("/run-sheets/{run_sheet_id}", response_model=RunSheet)
+async def get_run_sheet(run_sheet_id: str):
+    run_sheet = await db.run_sheets.find_one({"id": run_sheet_id}, {"_id": 0})
+    if not run_sheet:
+        raise HTTPException(status_code=404, detail="Run sheet not found")
+    return run_sheet
+
+# Step 5: Scan Run Sheet at Outbound Security
+@api_router.post("/run-sheets/{run_sheet_id}/scan-out", response_model=RunSheet)
+async def scan_out_run_sheet(run_sheet_id: str):
+    run_sheet = await db.run_sheets.find_one({"id": run_sheet_id}, {"_id": 0})
+    if not run_sheet:
+        raise HTTPException(status_code=404, detail="Run sheet not found")
+    
+    if run_sheet["is_scanned_out"]:
+        raise HTTPException(status_code=400, detail="Run sheet already scanned out")
+    
+    await db.run_sheets.update_one(
+        {"id": run_sheet_id},
+        {"$set": {
+            "is_scanned_out": True,
+            "scanned_out_at": datetime.now(timezone.utc).isoformat()
+        }}
+    )
+    
+    # Update all shipments to out for delivery
+    await db.shipments.update_many(
+        {"run_sheet_id": run_sheet_id},
+        {"$set": {
+            "status": ShipmentStatus.OUT_FOR_DELIVERY.value,
+            "updated_at": datetime.now(timezone.utc).isoformat()
+        }}
+    )
+    
+    return await get_run_sheet(run_sheet_id)
+
+# Step 8: Scan Run Sheet on Return
+@api_router.post("/run-sheets/{run_sheet_id}/scan-in", response_model=RunSheet)
+async def scan_in_run_sheet(run_sheet_id: str):
+    run_sheet = await db.run_sheets.find_one({"id": run_sheet_id}, {"_id": 0})
+    if not run_sheet:
+        raise HTTPException(status_code=404, detail="Run sheet not found")
+    
+    await db.run_sheets.update_one(
+        {"id": run_sheet_id},
+        {"$set": {
+            "is_scanned_in": True,
+            "scanned_in_at": datetime.now(timezone.utc).isoformat()
+        }}
+    )
+    
+    return await get_run_sheet(run_sheet_id)
+
+# ==================== DELIVERY ATTEMPT ROUTES ====================
+
+# Step 6 & 7: Record Delivery Attempt
+@api_router.post("/delivery-attempts", response_model=DeliveryAttempt)
+async def create_delivery_attempt(input: DeliveryAttemptCreate):
+    # Verify shipment exists
+    shipment = await db.shipments.find_one({"id": input.shipment_id}, {"_id": 0})
+    if not shipment:
+        raise HTTPException(status_code=404, detail="Shipment not found")
+    
+    # Get run sheet to get champ_id
+    run_sheet = await db.run_sheets.find_one({"id": input.run_sheet_id}, {"_id": 0})
+    if not run_sheet:
+        raise HTTPException(status_code=404, detail="Run sheet not found")
+    
+    attempt = DeliveryAttempt(
+        **input.model_dump(),
+        champ_id=run_sheet["champ_id"]
+    )
+    
+    doc = prepare_doc_for_db(attempt.model_dump())
+    await db.delivery_attempts.insert_one(doc)
+    
+    # Update shipment status based on outcome
+    new_status = None
+    update_data = {"updated_at": datetime.now(timezone.utc).isoformat()}
+    
+    if input.outcome == DeliveryOutcome.DELIVERED:
+        new_status = ShipmentStatus.DELIVERED.value
+    elif input.outcome == DeliveryOutcome.CANCELLED:
+        new_status = ShipmentStatus.CANCELLED.value
+    elif input.outcome == DeliveryOutcome.NO_RESPONSE:
+        new_status = ShipmentStatus.NO_RESPONSE.value
+    elif input.outcome == DeliveryOutcome.RESCHEDULED:
+        new_status = ShipmentStatus.RESCHEDULED.value
+        if input.rescheduled_date:
+            update_data["rescheduled_date"] = input.rescheduled_date
+    
+    if new_status:
+        update_data["status"] = new_status
+        if input.notes:
+            update_data["delivery_notes"] = input.notes
+        
+        await db.shipments.update_one(
+            {"id": input.shipment_id},
+            {"$set": update_data}
+        )
+    
+    return attempt
+
+@api_router.get("/delivery-attempts", response_model=List[DeliveryAttempt])
+async def get_delivery_attempts(
+    shipment_id: Optional[str] = None,
+    run_sheet_id: Optional[str] = None,
+    champ_id: Optional[str] = None
+):
+    query = {}
+    if shipment_id:
+        query["shipment_id"] = shipment_id
+    if run_sheet_id:
+        query["run_sheet_id"] = run_sheet_id
+    if champ_id:
+        query["champ_id"] = champ_id
+    
+    attempts = await db.delivery_attempts.find(query, {"_id": 0}).to_list(1000)
+    return attempts
+
+# ==================== RETURN TO WAREHOUSE ====================
+
+# Step 9: Return undelivered shipments to warehouse
+@api_router.post("/logistics/return-to-warehouse", response_model=List[Shipment])
+async def return_to_warehouse(shipment_ids: List[str]):
+    updated_shipments = []
+    for sid in shipment_ids:
+        result = await db.shipments.update_one(
+            {"id": sid, "status": {"$in": [
+                ShipmentStatus.CANCELLED.value,
+                ShipmentStatus.NO_RESPONSE.value
+            ]}},
+            {"$set": {
+                "status": ShipmentStatus.RETURNED_TO_WH.value,
+                "champ_id": None,
+                "run_sheet_id": None,
+                "updated_at": datetime.now(timezone.utc).isoformat()
+            }}
+        )
+        if result.modified_count > 0:
+            shipment = await db.shipments.find_one({"id": sid}, {"_id": 0})
+            updated_shipments.append(shipment)
+    
+    return updated_shipments
+
+# Get undelivered shipments (for common location assignment)
+@api_router.get("/logistics/undelivered", response_model=List[Shipment])
+async def get_undelivered_shipments():
+    shipments = await db.shipments.find(
+        {"status": {"$in": [
+            ShipmentStatus.CANCELLED.value,
+            ShipmentStatus.NO_RESPONSE.value,
+            ShipmentStatus.RETURNED_TO_WH.value,
+            ShipmentStatus.RESCHEDULED.value
+        ]}},
+        {"_id": 0}
+    ).to_list(1000)
+    return shipments
 
 # ==================== DASHBOARD STATS ====================
-
-@api_router.get("/dashboard/stats", response_model=DashboardStats)
-async def get_dashboard_stats(payload: dict = Depends(verify_token)):
-    # Shipment stats
-    total_shipments = await db.shipments.count_documents({})
-    pending_shipments = await db.shipments.count_documents({"status": "pending"})
-    in_transit = await db.shipments.count_documents({"status": {"$in": ["assigned", "picked_up", "in_transit"]}})
-    delivered = await db.shipments.count_documents({"status": "delivered"})
-    
-    # Driver stats
-    total_drivers = await db.drivers.count_documents({})
-    active_drivers = await db.drivers.count_documents({"status": "active"})
-    
-    # COD stats
-    cod_pipeline = [
-        {"$match": {"is_cod": True}},
-        {"$group": {
-            "_id": None,
-            "total": {"$sum": "$cod_amount"},
-            "pending": {"$sum": {"$cond": [{"$and": [{"$eq": ["$cod_collected", True]}, {"$eq": ["$cod_reconciled", False]}]}, "$cod_amount", 0]}},
-            "reconciled": {"$sum": {"$cond": ["$cod_reconciled", "$cod_amount", 0]}}
-        }}
+@api_router.get("/dashboard/stats")
+async def get_dashboard_stats():
+    # Count shipments by status
+    pipeline = [
+        {"$group": {"_id": "$status", "count": {"$sum": 1}}}
     ]
-    cod_result = await db.shipments.aggregate(cod_pipeline).to_list(1)
-    cod_stats = cod_result[0] if cod_result else {"total": 0, "pending": 0, "reconciled": 0}
+    status_counts = await db.shipments.aggregate(pipeline).to_list(100)
+    status_dict = {s["_id"]: s["count"] for s in status_counts}
     
-    return DashboardStats(
-        total_shipments=total_shipments,
-        pending_shipments=pending_shipments,
-        in_transit=in_transit,
-        delivered=delivered,
-        total_drivers=total_drivers,
-        active_drivers=active_drivers,
-        total_cod_amount=cod_stats.get("total", 0),
-        pending_cod_amount=cod_stats.get("pending", 0),
-        reconciled_cod_amount=cod_stats.get("reconciled", 0)
-    )
-
-# ==================== BULK UPLOAD ====================
-
-@api_router.get("/shipments/template/download")
-async def download_template(payload: dict = Depends(verify_token)):
-    """Download CSV template for bulk shipment upload"""
-    output = io.StringIO()
-    writer = csv.writer(output)
+    # Today's deliveries
+    today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    today_delivered = await db.shipments.count_documents({
+        "status": ShipmentStatus.DELIVERED.value,
+        "updated_at": {"$gte": today_start.isoformat()}
+    })
     
-    # Header row
-    writer.writerow([
-        'shipment_type', 'pickup_subtype', 'customer_name', 'customer_phone',
-        'pickup_address', 'delivery_address', 'package_description', 
-        'number_of_items', 'weight', 'is_cod', 'cod_amount'
-    ])
+    # Active run sheets
+    active_run_sheets = await db.run_sheets.count_documents({
+        "is_scanned_out": True,
+        "is_scanned_in": False
+    })
     
-    # Example rows
-    writer.writerow([
-        'delivery', '', 'John Doe', '9876543210',
-        '123 Warehouse St', '456 Customer Lane', 'Electronics',
-        '2', '1.5', 'true', '1500'
-    ])
-    writer.writerow([
-        'pickup', 'customer_return', 'Jane Smith', '8765432109',
-        '789 Return Address', '', 'Return Package',
-        '1', '0.5', 'false', ''
-    ])
-    writer.writerow([
-        'pickup', 'pickup', 'Bob Wilson', '7654321098',
-        '321 Pickup Location', '', 'Documents',
-        '3', '', 'false', ''
-    ])
+    # Total champs
+    total_champs = await db.champs.count_documents({"is_active": True})
     
-    output.seek(0)
-    return StreamingResponse(
-        iter([output.getvalue()]),
-        media_type="text/csv",
-        headers={"Content-Disposition": "attachment; filename=shipment_template.csv"}
-    )
-
-@api_router.post("/shipments/bulk-upload")
-async def bulk_upload_shipments(file: UploadFile = File(...), payload: dict = Depends(verify_token)):
-    """Upload CSV file to create multiple shipments"""
-    if not file.filename.endswith('.csv'):
-        raise HTTPException(status_code=400, detail="Only CSV files are allowed")
+    # Payment collection stats
+    cash_pipeline = [
+        {"$match": {"payment_method_used": PaymentMethod.CASH.value}},
+        {"$group": {"_id": None, "total": {"$sum": "$payment_collected"}}}
+    ]
+    cash_result = await db.delivery_attempts.aggregate(cash_pipeline).to_list(1)
+    cash_collected = cash_result[0]["total"] if cash_result else 0
     
-    content = await file.read()
-    decoded = content.decode('utf-8')
-    reader = csv.DictReader(io.StringIO(decoded))
-    
-    created_shipments = []
-    errors = []
-    row_num = 1
-    
-    for row in reader:
-        row_num += 1
-        try:
-            # Validate required fields
-            if not row.get('customer_name') or not row.get('customer_phone') or not row.get('pickup_address'):
-                errors.append({"row": row_num, "error": "Missing required fields (customer_name, customer_phone, pickup_address)"})
-                continue
-            
-            shipment_type = row.get('shipment_type', 'delivery').lower()
-            if shipment_type not in ['delivery', 'pickup']:
-                errors.append({"row": row_num, "error": "Invalid shipment_type. Must be 'delivery' or 'pickup'"})
-                continue
-            
-            if shipment_type == 'delivery' and not row.get('delivery_address'):
-                errors.append({"row": row_num, "error": "delivery_address required for delivery shipments"})
-                continue
-            
-            shipment_id = str(uuid.uuid4())
-            now = datetime.now(timezone.utc).isoformat()
-            is_cod = row.get('is_cod', '').lower() in ['true', '1', 'yes']
-            
-            shipment_doc = {
-                "id": shipment_id,
-                "tracking_number": generate_tracking_number(),
-                "shipment_type": shipment_type,
-                "pickup_subtype": row.get('pickup_subtype') if shipment_type == 'pickup' else None,
-                "customer_name": row['customer_name'].strip(),
-                "customer_phone": row['customer_phone'].strip(),
-                "pickup_address": row['pickup_address'].strip(),
-                "delivery_address": row.get('delivery_address', '').strip() if shipment_type == 'delivery' else None,
-                "package_description": row.get('package_description', '').strip() or 'Package',
-                "number_of_items": int(row.get('number_of_items') or 1),
-                "weight": float(row['weight']) if row.get('weight') else None,
-                "is_cod": is_cod if shipment_type == 'delivery' else False,
-                "cod_amount": float(row['cod_amount']) if (is_cod and row.get('cod_amount') and shipment_type == 'delivery') else 0.0,
-                "cod_collected": False,
-                "cod_reconciled": False,
-                "status": "pending",
-                "driver_id": None,
-                "driver_name": None,
-                "delivery_proof_image": None,
-                "delivery_latitude": None,
-                "delivery_longitude": None,
-                "delivery_notes": None,
-                "delivered_at": None,
-                "completed_at": None,
-                "reschedule_date": None,
-                "reschedule_time": None,
-                "reschedule_reason": None,
-                "follow_ups": [],
-                "created_at": now,
-                "updated_at": now
-            }
-            
-            await db.shipments.insert_one(shipment_doc)
-            created_shipments.append({
-                "tracking_number": shipment_doc["tracking_number"],
-                "customer_name": shipment_doc["customer_name"]
-            })
-            
-        except Exception as e:
-            errors.append({"row": row_num, "error": str(e)})
+    card_pipeline = [
+        {"$match": {"payment_method_used": PaymentMethod.CARD.value}},
+        {"$group": {"_id": None, "total": {"$sum": "$payment_collected"}}}
+    ]
+    card_result = await db.delivery_attempts.aggregate(card_pipeline).to_list(1)
+    card_collected = card_result[0]["total"] if card_result else 0
     
     return {
-        "success": True,
-        "created_count": len(created_shipments),
-        "error_count": len(errors),
-        "created_shipments": created_shipments,
-        "errors": errors
+        "shipments_by_status": status_dict,
+        "today_delivered": today_delivered,
+        "active_run_sheets": active_run_sheets,
+        "total_active_champs": total_champs,
+        "cash_collected": cash_collected,
+        "card_collected": card_collected,
+        "total_shipments": sum(status_dict.values()) if status_dict else 0
     }
 
-# ==================== HEALTH CHECK ====================
+# Get available routes
+@api_router.get("/routes")
+async def get_routes():
+    routes = await db.shipments.distinct("route")
+    return routes
 
-@api_router.get("/health")
-async def health_check():
-    return {"status": "healthy", "timestamp": datetime.now(timezone.utc).isoformat()}
+# ==================== EXISTING ROUTES ====================
+class StatusCheck(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    client_name: str
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
-# Include router and middleware
+class StatusCheckCreate(BaseModel):
+    client_name: str
+
+@api_router.get("/")
+async def root():
+    return {"message": "Last Mile Delivery System API"}
+
+@api_router.post("/status", response_model=StatusCheck)
+async def create_status_check(input: StatusCheckCreate):
+    status_dict = input.model_dump()
+    status_obj = StatusCheck(**status_dict)
+    doc = status_obj.model_dump()
+    doc['timestamp'] = doc['timestamp'].isoformat()
+    _ = await db.status_checks.insert_one(doc)
+    return status_obj
+
+@api_router.get("/status", response_model=List[StatusCheck])
+async def get_status_checks():
+    status_checks = await db.status_checks.find({}, {"_id": 0}).to_list(1000)
+    for check in status_checks:
+        if isinstance(check['timestamp'], str):
+            check['timestamp'] = datetime.fromisoformat(check['timestamp'])
+    return status_checks
+
+# Include the router in the main app
 app.include_router(api_router)
 
 app.add_middleware(
@@ -787,6 +688,13 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 @app.on_event("shutdown")
 async def shutdown_db_client():

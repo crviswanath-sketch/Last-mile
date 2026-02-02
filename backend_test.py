@@ -407,12 +407,13 @@ def main():
     
     # Run test suites
     basic_ok = tester.test_basic_endpoints()
-    dashboard_stats_ok = tester.test_dashboard_stats()  # NEW
-    test_awbs_ok = tester.test_test_awbs()  # NEW
+    dashboard_stats_ok = tester.test_dashboard_stats()  # EXISTING
+    test_awbs_ok = tester.test_test_awbs()  # EXISTING
     champ_ok = tester.test_champ_operations()
     shipment_ok = tester.test_shipment_operations()
-    pickup_ok = tester.test_pickup_operations()  # Enhanced with new features
+    pickup_ok = tester.test_pickup_operations()  # Enhanced with existing features
     logistics_ok = tester.test_logistics_flow()
+    new_features_ok = tester.test_new_features()  # NEW FEATURES FROM REVIEW REQUEST
     
     # Print summary
     print("\n" + "=" * 60)
@@ -424,12 +425,13 @@ def main():
     
     print(f"\nTest Suite Results:")
     print(f"  Basic Endpoints: {'✅' if basic_ok else '❌'}")
-    print(f"  Dashboard Pickup Stats: {'✅' if dashboard_stats_ok else '❌'} (NEW)")
-    print(f"  Test AWBs (10 AWBs): {'✅' if test_awbs_ok else '❌'} (NEW)")
+    print(f"  Dashboard Pickup Stats: {'✅' if dashboard_stats_ok else '❌'} (EXISTING)")
+    print(f"  Test AWBs (10 AWBs): {'✅' if test_awbs_ok else '❌'} (EXISTING)")
     print(f"  Champ Operations: {'✅' if champ_ok else '❌'}")
     print(f"  Shipment Operations: {'✅' if shipment_ok else '❌'}")
-    print(f"  Pickup Operations: {'✅' if pickup_ok else '❌'} (Enhanced with Complete with Proof)")
+    print(f"  Pickup Operations: {'✅' if pickup_ok else '❌'} (EXISTING Enhanced)")
     print(f"  Logistics Flow: {'✅' if logistics_ok else '❌'}")
+    print(f"  NEW FEATURES: {'✅' if new_features_ok else '❌'} (Inscan Date/Time, Unsubmitted Items, Champ Delivery View)")
     
     print(f"\nCreated Test Data:")
     print(f"  Champs: {len(tester.created_ids['champs'])}")
@@ -437,7 +439,7 @@ def main():
     print(f"  Pickups: {len(tester.created_ids['pickups'])}")
     
     # Return 0 if all critical tests pass (focus on new features)
-    critical_passed = pickup_ok and dashboard_stats_ok and basic_ok
+    critical_passed = new_features_ok and basic_ok and pickup_ok
     return 0 if critical_passed else 1
 
 if __name__ == "__main__":

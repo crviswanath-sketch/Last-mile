@@ -2250,8 +2250,9 @@ const Pickups = () => {
             </DialogHeader>
             
             <Tabs value={createType} onValueChange={setCreateType} className="mt-4">
-              <TabsList className="grid grid-cols-3 w-full">
+              <TabsList className="grid grid-cols-4 w-full">
                 <TabsTrigger value="seller_pickup" data-testid="tab-seller-pickup">Seller Pickup</TabsTrigger>
+                <TabsTrigger value="unsubmitted_items" data-testid="tab-unsubmitted-items">Unsubmitted Items</TabsTrigger>
                 <TabsTrigger value="customer_return" data-testid="tab-customer-return">Customer Return</TabsTrigger>
                 <TabsTrigger value="personal_shopping" data-testid="tab-personal-shopping">Personal Shopping</TabsTrigger>
               </TabsList>

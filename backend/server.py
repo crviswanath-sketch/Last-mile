@@ -1034,6 +1034,103 @@ async def add_partial_delivery(pickup_id: str, proof: PickupCompletionProof):
     pickup = await db.pickups.find_one({"id": pickup_id}, {"_id": 0})
     return pickup
 
+# ==================== CHAMP DELIVERY VIEW ====================
+@api_router.get("/champ/{champ_id}/shipments", response_model=List[Shipment])
+async def get_champ_shipments(champ_id: str):
+    """Get all shipments assigned to a champ (for delivery view)"""
+    # First check if champ exists
+    champ = await db.champs.find_one({"id": champ_id}, {"_id": 0})
+    if not champ:
+        raise HTTPException(status_code=404, detail="Champ not found")
+    
+    # Get shipments from active run sheets for this champ
+    run_sheets = await db.run_sheets.find({
+        "champ_id": champ_id,
+        "status": "active"
+    }, {"_id": 0}).to_list(100)
+    
+    shipment_ids = []
+    for rs in run_sheets:
+        shipment_ids.extend(rs.get("shipment_ids", []))
+    
+    if not shipment_ids:
+        return []
+    
+    shipments = await db.shipments.find(
+        {"id": {"$in": shipment_ids}},
+        {"_id": 0}
+    ).to_list(1000)
+    return shipments
+
+@api_router.post("/champ/delivery-action", response_model=Shipment)
+async def champ_delivery_action(action: ChampDeliveryAction):
+    """Champ marks a shipment as delivered/cancelled/rescheduled with proof"""
+    shipment = await db.shipments.find_one({"id": action.shipment_id}, {"_id": 0})
+    if not shipment:
+        raise HTTPException(status_code=404, detail="Shipment not found")
+    
+    now = datetime.now(timezone.utc)
+    update_data = {
+        "updated_at": now.isoformat()
+    }
+    
+    if action.action == DeliveryOutcome.DELIVERED:
+        update_data["status"] = ShipmentStatus.DELIVERED.value
+        update_data["delivery_proof_image"] = action.proof_image_base64
+        update_data["delivery_latitude"] = action.latitude
+        update_data["delivery_longitude"] = action.longitude
+        update_data["delivery_timestamp"] = now.isoformat()
+        update_data["delivery_notes"] = action.notes
+        
+        # Record payment if collected
+        if action.payment_collected > 0:
+            # Create delivery attempt record
+            attempt = DeliveryAttemptCreate(
+                shipment_id=action.shipment_id,
+                run_sheet_id=shipment.get("run_sheet_id", ""),
+                outcome=DeliveryOutcome.DELIVERED,
+                payment_collected=action.payment_collected,
+                payment_method_used=action.payment_method_used,
+                notes=action.notes
+            )
+            attempt_doc = {
+                "id": str(uuid.uuid4()),
+                **attempt.model_dump(),
+                "created_at": now.isoformat()
+            }
+            await db.delivery_attempts.insert_one(attempt_doc)
+    
+    elif action.action == DeliveryOutcome.CANCELLED:
+        update_data["status"] = ShipmentStatus.CANCELLED.value
+        update_data["cancellation_reason"] = action.cancellation_reason or action.notes
+        update_data["delivery_notes"] = action.notes
+        update_data["delivery_proof_image"] = action.proof_image_base64
+        update_data["delivery_latitude"] = action.latitude
+        update_data["delivery_longitude"] = action.longitude
+    
+    elif action.action == DeliveryOutcome.RESCHEDULED:
+        update_data["status"] = ShipmentStatus.RESCHEDULED.value
+        update_data["rescheduled_date"] = action.reschedule_date
+        update_data["reschedule_reason"] = action.notes
+        update_data["delivery_notes"] = action.notes
+    
+    await db.shipments.update_one(
+        {"id": action.shipment_id},
+        {"$set": update_data}
+    )
+    
+    shipment = await db.shipments.find_one({"id": action.shipment_id}, {"_id": 0})
+    return shipment
+
+@api_router.get("/champ/{champ_id}/pickups", response_model=List[Pickup])
+async def get_champ_pickups(champ_id: str):
+    """Get all pickups assigned to a champ"""
+    pickups = await db.pickups.find(
+        {"champ_id": champ_id, "status": {"$in": ["assigned", "in_progress"]}},
+        {"_id": 0}
+    ).to_list(100)
+    return pickups
+
 # ==================== DASHBOARD STATS ====================
 @api_router.get("/dashboard/stats")
 async def get_dashboard_stats():

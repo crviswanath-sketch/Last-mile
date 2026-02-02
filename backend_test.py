@@ -244,9 +244,94 @@ class LastMileDeliveryTester:
         
         return False
 
+    def test_new_features(self):
+        """Test the three NEW features from the review request"""
+        print("\n=== Testing NEW FEATURES (Review Request) ===")
+        
+        # Feature 1: Test inscan date/time and date range filter
+        print("\n--- Feature 1: Inscan Date/Time & Date Range Filter ---")
+        
+        # Test shipments with date range filter
+        success, response = self.run_test("Get Shipments with Date Filter", "GET", "shipments?inscan_date_from=2024-01-01&inscan_date_to=2025-12-31", 200)
+        if success:
+            # Check if any shipments have inscan_date and inscan_time
+            shipments_with_inscan = [s for s in response if s.get('inscan_date') and s.get('inscan_time')]
+            print(f"   Found {len(shipments_with_inscan)} shipments with inscan date/time")
+            if len(shipments_with_inscan) > 0:
+                sample = shipments_with_inscan[0]
+                print(f"   Sample inscan data: {sample.get('inscan_date')} {sample.get('inscan_time')}")
+        
+        # Feature 2: Test Unsubmitted Items pickup type
+        print("\n--- Feature 2: Unsubmitted Items Pickup ---")
+        
+        unsubmitted_data = {
+            "seller_name": "Test Unsubmitted Seller",
+            "seller_address": "123 Unsubmitted Street",
+            "seller_phone": "+1234567894",
+            "pickup_items": [
+                {"category": "apparel", "quantity": 3},
+                {"category": "accessories", "quantity": 1}
+            ],
+            "notes": "Test unsubmitted items pickup"
+        }
+        
+        success, response = self.run_test("Create Unsubmitted Items Pickup", "POST", "pickups/unsubmitted-items", 200, unsubmitted_data)
+        unsubmitted_pickup_id = None
+        if success and 'id' in response:
+            unsubmitted_pickup_id = response['id']
+            self.created_ids['pickups'].append(unsubmitted_pickup_id)
+            print(f"   Created unsubmitted items pickup with ID: {unsubmitted_pickup_id}")
+            print(f"   Pickup type: {response.get('pickup_type')}")
+        
+        # Verify unsubmitted items appear in pickup list
+        success, response = self.run_test("Get Pickups (Check Unsubmitted)", "GET", "pickups", 200)
+        if success:
+            unsubmitted_pickups = [p for p in response if p.get('pickup_type') == 'unsubmitted_items']
+            print(f"   Found {len(unsubmitted_pickups)} unsubmitted items pickups")
+        
+        # Feature 3: Test Champ Delivery View endpoints
+        print("\n--- Feature 3: Champ Delivery View ---")
+        
+        # Test get champ shipments endpoint
+        if self.created_ids['champs']:
+            champ_id = self.created_ids['champs'][0]
+            success, response = self.run_test("Get Champ Shipments", "GET", f"champ/{champ_id}/shipments", 200)
+            if success:
+                print(f"   Found {len(response)} shipments for champ {champ_id}")
+        
+        # Test champ delivery action endpoint (simulate delivery with proof)
+        if self.created_ids['shipments']:
+            shipment_id = self.created_ids['shipments'][0]
+            
+            delivery_action_data = {
+                "shipment_id": shipment_id,
+                "action": "delivered",
+                "proof_image_base64": "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQH/2wBDAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQH/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAv/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwA/8A==",
+                "latitude": 12.9716,
+                "longitude": 77.5946,
+                "notes": "Test delivery with GPS proof",
+                "payment_collected": 100.50,
+                "payment_method_used": "cash"
+            }
+            
+            success, response = self.run_test("Champ Delivery Action (Delivered)", "POST", "champ/delivery-action", 200, delivery_action_data)
+            if success:
+                print(f"   Successfully marked shipment as delivered with proof")
+                print(f"   Updated status: {response.get('status')}")
+                print(f"   Delivery proof recorded: {bool(response.get('delivery_proof_image'))}")
+        
+        # Test champ pickups endpoint
+        if self.created_ids['champs']:
+            champ_id = self.created_ids['champs'][0]
+            success, response = self.run_test("Get Champ Pickups", "GET", f"champ/{champ_id}/pickups", 200)
+            if success:
+                print(f"   Found {len(response)} pickups for champ {champ_id}")
+        
+        return True
+
     def test_test_awbs(self):
         """Test if 10 test AWBs exist (AWB000001-AWB000010)"""
-        print("\n=== Testing Test AWBs (NEW FEATURE) ===")
+        print("\n=== Testing Test AWBs (EXISTING FEATURE) ===")
         
         success, response = self.run_test("Get All Shipments", "GET", "shipments", 200)
         if success:

@@ -2475,6 +2475,30 @@ const Pickups = () => {
                             Mark Delivery
                           </Button>
                         )}
+                        {(pickup.status === "assigned" || pickup.status === "partial") && (
+                          <Button
+                            variant="default"
+                            size="sm"
+                            onClick={() => { 
+                              setSelectedPickup(pickup); 
+                              setCompletionProof({ proof_image_base64: "", latitude: "", longitude: "", notes: "" });
+                              setCompletionDialogOpen(true); 
+                            }}
+                            data-testid={`complete-btn-${pickup.id}`}
+                          >
+                            Complete with Proof
+                          </Button>
+                        )}
+                        {pickup.pickup_type === "personal_shopping" && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => openHistoryDialog(pickup)}
+                            data-testid={`history-btn-${pickup.id}`}
+                          >
+                            History
+                          </Button>
+                        )}
                       </div>
                     </TableCell>
                   </TableRow>

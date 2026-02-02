@@ -3383,6 +3383,7 @@ function App() {
             <Route path="/champs" element={<Champs />} />
             <Route path="/run-sheets" element={<RunSheets />} />
             <Route path="/delivery" element={<DeliveryTracking />} />
+            <Route path="/champ-view" element={<ChampDeliveryView />} />
             <Route path="/returns" element={<Returns />} />
           </Routes>
         </main>

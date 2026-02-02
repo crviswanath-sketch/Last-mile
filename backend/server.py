@@ -240,6 +240,33 @@ class PickupUpdate(BaseModel):
     collected_value: Optional[float] = None
     shopping_items: Optional[List[PersonalShoppingItem]] = None
 
+# Pickup Completion with Proof
+class PickupCompletionProof(BaseModel):
+    pickup_id: str
+    proof_image_base64: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    notes: Optional[str] = None
+    collected_value: float = 0
+    # For partial delivery of personal shopping items
+    delivered_item_indices: Optional[List[int]] = None
+
+# Personal Shopping History Entry
+class ShoppingHistoryEntry(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    pickup_id: str
+    action: str  # "partial_delivery", "full_delivery", "item_returned"
+    items_delivered: List[str] = []
+    value_collected: float = 0
+    champ_id: Optional[str] = None
+    champ_name: Optional[str] = None
+    proof_image: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    notes: Optional[str] = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
 # ==================== HELPER FUNCTIONS ====================
 def serialize_datetime(obj):
     """Convert datetime objects to ISO string for MongoDB storage"""

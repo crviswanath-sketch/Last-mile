@@ -2043,6 +2043,85 @@ const Pickups = () => {
     }
   };
 
+  const handleCompleteWithProof = async () => {
+    try {
+      const deliveredIndices = selectedPickup.shopping_items
+        ?.map((item, i) => item.is_delivered ? i : -1)
+        .filter(i => i >= 0) || [];
+      
+      const collectedValue = selectedPickup.shopping_items
+        ?.filter(item => item.is_delivered)
+        .reduce((sum, item) => sum + item.value, 0) || 0;
+
+      await axios.post(`${API}/pickups/${selectedPickup.id}/complete-with-proof`, {
+        pickup_id: selectedPickup.id,
+        proof_image_base64: completionProof.proof_image_base64,
+        latitude: parseFloat(completionProof.latitude) || null,
+        longitude: parseFloat(completionProof.longitude) || null,
+        notes: completionProof.notes,
+        collected_value: collectedValue,
+        delivered_item_indices: deliveredIndices
+      });
+      toast.success("Pickup completed with proof!");
+      setCompletionDialogOpen(false);
+      setCompletionProof({ proof_image_base64: "", latitude: "", longitude: "", notes: "" });
+      setSelectedPickup(null);
+      fetchPickups();
+    } catch (e) {
+      toast.error("Failed to complete pickup");
+    }
+  };
+
+  const handleImageUpload = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setCompletionProof({ ...completionProof, proof_image_base64: reader.result });
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const getCurrentLocation = () => {
+    if (!navigator.geolocation) {
+      toast.error("Geolocation not supported");
+      return;
+    }
+    setGettingLocation(true);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setCompletionProof({
+          ...completionProof,
+          latitude: position.coords.latitude.toFixed(6),
+          longitude: position.coords.longitude.toFixed(6)
+        });
+        toast.success("Location captured!");
+        setGettingLocation(false);
+      },
+      () => {
+        toast.error("Failed to get location");
+        setGettingLocation(false);
+      },
+      { enableHighAccuracy: true, timeout: 15000 }
+    );
+  };
+
+  const fetchHistory = async (pickupId) => {
+    try {
+      const response = await axios.get(`${API}/pickups/${pickupId}/history`);
+      setPickupHistory(response.data);
+    } catch (e) {
+      setPickupHistory([]);
+    }
+  };
+
+  const openHistoryDialog = (pickup) => {
+    setSelectedPickup(pickup);
+    fetchHistory(pickup.id);
+    setHistoryDialogOpen(true);
+  };
+
   const resetForms = () => {
     setSellerForm({
       seller_name: "",

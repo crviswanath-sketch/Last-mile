@@ -134,6 +134,44 @@ const Dashboard = () => {
         </Card>
       </div>
 
+      {/* Pickup Stats Row */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <Card data-testid="stat-total-pickups">
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-sm font-medium">Total Pickups</CardTitle>
+            <Box className="h-4 w-4 text-purple-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{stats?.total_pickups || 0}</div>
+            <div className="text-xs text-muted-foreground mt-1">
+              Seller: {stats?.pickups_by_type?.seller_pickup || 0} | 
+              Return: {stats?.pickups_by_type?.customer_return || 0} | 
+              Shopping: {stats?.pickups_by_type?.personal_shopping || 0}
+            </div>
+          </CardContent>
+        </Card>
+        
+        <Card data-testid="stat-pending-pickups">
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-sm font-medium">Pending Pickups</CardTitle>
+            <Clock className="h-4 w-4 text-orange-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-orange-600">{stats?.pending_pickups || 0}</div>
+          </CardContent>
+        </Card>
+        
+        <Card data-testid="stat-completed-pickups">
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-sm font-medium">Completed Pickups</CardTitle>
+            <CheckCircle2 className="h-4 w-4 text-green-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-green-600">{stats?.completed_pickups || 0}</div>
+          </CardContent>
+        </Card>
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card data-testid="shipment-status-breakdown">
           <CardHeader>

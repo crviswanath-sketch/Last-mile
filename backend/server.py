@@ -789,6 +789,22 @@ async def create_personal_shopping(input: PersonalShoppingCreate):
     await db.pickups.insert_one(doc)
     return pickup
 
+@api_router.post("/pickups/unsubmitted-items", response_model=Pickup)
+async def create_unsubmitted_items_pickup(input: UnsubmittedItemsCreate):
+    """Create pickup for unsubmitted items (same structure as seller pickup)"""
+    pickup = Pickup(
+        pickup_type=PickupType.UNSUBMITTED_ITEMS,
+        seller_name=input.seller_name,
+        seller_address=input.seller_address,
+        seller_phone=input.seller_phone,
+        pickup_items=[item.model_dump() for item in input.pickup_items],
+        notes=input.notes,
+        total_value=0
+    )
+    doc = prepare_doc_for_db(pickup.model_dump())
+    await db.pickups.insert_one(doc)
+    return pickup
+
 @api_router.get("/pickups", response_model=List[Pickup])
 async def get_pickups(
     pickup_type: Optional[PickupType] = None,

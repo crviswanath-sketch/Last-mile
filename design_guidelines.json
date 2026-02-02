@@ -1,0 +1,168 @@
+{
+  "identity": {
+    "name": "E1",
+    "role": "Anti-AI Designer",
+    "principles": [
+      "Fusion over Imitation",
+      "Emotion First",
+      "Content is King",
+      "Zoom In",
+      "Negative Space",
+      "Contrast"
+    ]
+  },
+  "project_context": {
+    "app_name": "LogiTrack Pro",
+    "app_type": "Logistics Dashboard & Driver App",
+    "target_audience": "Logistics Admins, Delivery Drivers",
+    "emotional_tone": "Precision, Authority, Efficiency, Trust",
+    "theme_strategy": "Swiss & High-Contrast (Archetype 4) - Modified for Logistics"
+  },
+  "typography": {
+    "font_family": {
+      "headings": "Barlow Condensed, sans-serif",
+      "body": "Inter, sans-serif",
+      "mono": "JetBrains Mono, monospace"
+    },
+    "google_fonts_import": "https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap",
+    "usage_rules": {
+      "headings": "Use Barlow Condensed for all H1-H3. Weight: 600 or 700. Tracking: tight (-0.02em).",
+      "body": "Use Inter for all paragraphs and UI text. Weight: 400 or 500.",
+      "data": "Use JetBrains Mono for Tracking IDs, Coordinates, and Financial Figures.",
+      "uppercase": "Use uppercase + wide tracking (0.1em) for table headers and tiny labels."
+    }
+  },
+  "colors": {
+    "palette": {
+      "primary": {
+        "DEFAULT": "#0052CC",
+        "foreground": "#FFFFFF",
+        "hover": "#0043A6"
+      },
+      "secondary": {
+        "DEFAULT": "#F1F5F9",
+        "foreground": "#0F172A"
+      },
+      "accent": {
+        "DEFAULT": "#FF5630",
+        "foreground": "#FFFFFF",
+        "description": "Use for Alerts, Pending Actions, 'Urgent' tags"
+      },
+      "success": {
+        "DEFAULT": "#10B981",
+        "foreground": "#FFFFFF",
+        "description": "Use for 'Delivered', 'Reconciled'"
+      },
+      "background": "#FFFFFF",
+      "surface": "#F8FAFC",
+      "border": "#E2E8F0",
+      "text": {
+        "primary": "#0F172A",
+        "secondary": "#64748B",
+        "muted": "#94A3B8"
+      }
+    },
+    "rules": [
+      "Never use gradients for backgrounds. Use solid, high-contrast colors.",
+      "Dashboard background should be 'surface' (#F8FAFC) to make white cards pop.",
+      "Text contrast must meet WCAG AA (4.5:1).",
+      "Use 'accent' color sparingly (max 10% of screen)."
+    ]
+  },
+  "layout": {
+    "spacing_system": "Tailwind Scale (p-4, p-6, p-8). Use generous padding inside cards (p-6 minimum).",
+    "grid_system": {
+      "dashboard": "Bento Grid Mode B (High Density). Grid cols: 1 (mobile), 3 (tablet), 4 (desktop). Gap: 6.",
+      "driver_app": "Single column stack. Large touch targets (min height 48px)."
+    },
+    "container_styles": {
+      "card": "bg-white border border-slate-200 rounded-lg shadow-sm hover:shadow-md transition-shadow duration-200",
+      "panel": "bg-slate-50 border-r border-slate-200",
+      "header": "bg-white border-b border-slate-200 sticky top-0 z-50"
+    }
+  },
+  "components": {
+    "buttons": {
+      "primary": "bg-primary text-white hover:bg-primary/90 rounded-md px-4 py-2 font-medium shadow-sm transition-all active:scale-95",
+      "secondary": "bg-white text-slate-700 border border-slate-300 hover:bg-slate-50 rounded-md px-4 py-2 font-medium transition-all",
+      "destructive": "bg-red-600 text-white hover:bg-red-700 rounded-md px-4 py-2 font-medium",
+      "ghost": "hover:bg-slate-100 text-slate-700 rounded-md px-4 py-2"
+    },
+    "inputs": {
+      "default": "flex h-10 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm ring-offset-white file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-slate-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50",
+      "error": "border-red-500 focus-visible:ring-red-500"
+    },
+    "badges": {
+      "base": "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2",
+      "success": "bg-green-100 text-green-800 border border-green-200",
+      "warning": "bg-yellow-100 text-yellow-800 border border-yellow-200",
+      "error": "bg-red-100 text-red-800 border border-red-200",
+      "neutral": "bg-slate-100 text-slate-800 border border-slate-200"
+    },
+    "tables": {
+      "header": "bg-slate-50 text-slate-500 uppercase tracking-wider text-xs font-semibold",
+      "row": "border-b border-slate-100 hover:bg-slate-50/50 transition-colors",
+      "cell": "px-6 py-4 whitespace-nowrap text-sm text-slate-700"
+    }
+  },
+  "visual_enhancers": {
+    "shadows": {
+      "card": "0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1)",
+      "dropdown": "0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1)",
+      "sticky": "0 4px 6px -1px rgb(0 0 0 / 0.05)"
+    },
+    "borders": {
+      "default": "1px solid #E2E8F0",
+      "active": "1px solid #0052CC"
+    },
+    "radius": {
+      "default": "0.5rem (8px)",
+      "small": "0.25rem (4px)",
+      "large": "0.75rem (12px)"
+    }
+  },
+  "assets": {
+    "icons": {
+      "library": "lucide-react",
+      "style": "Stroke width 1.5px or 2px. Size 16px (small), 20px (default), 24px (large)."
+    },
+    "images": {
+      "login_hero": {
+        "url": "https://images.unsplash.com/photo-1746985106190-6c116edec9bc?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NTYxNzV8MHwxfHNlYXJjaHwzfHxtb2Rlcm4lMjBkZWxpdmVyeSUyMHRydWNrJTIwY2l0eXxlbnwwfHx8fDE3Njk0MTkyMDh8MA&ixlib=rb-4.1.0&q=85",
+        "alt": "Modern delivery truck in city motion blur",
+        "usage": "Login page background or side panel"
+      },
+      "driver_hero": {
+        "url": "https://images.unsplash.com/photo-1764792314927-a82d9996285f?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NTYxNzV8MHwxfHNlYXJjaHwyfHxkZWxpdmVyeSUyMGRyaXZlciUyMHBhY2thZ2V8ZW58MHx8fHwxNzY5NDE5MjA0fDA&ixlib=rb-4.1.0&q=85",
+        "alt": "Delivery driver walking with package",
+        "usage": "Driver onboarding or profile section"
+      },
+      "warehouse_hero": {
+        "url": "https://images.unsplash.com/photo-1768796372882-8b67936af681?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NTYxODh8MHwxfHNlYXJjaHw0fHxsb2dpc3RpY3MlMjB3YXJlaG91c2UlMjB3b3JrZXJ8ZW58MHx8fHwxNzY5NDE5MjA2fDA&ixlib=rb-4.1.0&q=85",
+        "alt": "Warehouse worker scanning inventory",
+        "usage": "Admin dashboard empty state or banner"
+      }
+    }
+  },
+  "universal_guidelines": {
+    "general": [
+      "Do not use generic centered layouts. Use asymmetric grids.",
+      "Avoid 'AI slop' aesthetics (generic gradients, rounded everything).",
+      "Use 'sonner' for toasts.",
+      "Use 'lucide-react' for icons.",
+      "Ensure all interactive elements have 'data-testid' attributes."
+    ],
+    "accessibility": [
+      "Ensure 4.5:1 contrast ratio for text.",
+      "Focus states must be visible (ring-2 ring-primary).",
+      "Do not rely on color alone for status (use icons + text)."
+    ],
+    "technical": [
+      "Use 'export const ComponentName' for components.",
+      "Use 'export default function PageName' for pages.",
+      "Do not use 'transition: all'. Animate specific properties.",
+      "Do not use transparent backgrounds for dropdowns/modals (readability risk)."
+    ]
+  },
+  "instructions_to_main_agent": "You are building a high-performance logistics tool. Prioritize data density and clarity over decoration. Follow the 'Swiss & High-Contrast' archetype. Use the provided image URLs for visual context. Ensure the driver interface is touch-friendly (big buttons). Implement the 'Bento Grid' for the admin dashboard."
+}

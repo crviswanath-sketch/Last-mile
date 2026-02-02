@@ -1851,6 +1851,590 @@ const Returns = () => {
   );
 };
 
+// ==================== PICKUPS ====================
+const Pickups = () => {
+  const [pickups, setPickups] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState("seller_pickup");
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [createType, setCreateType] = useState("seller_pickup");
+  const [champs, setChamps] = useState([]);
+  const [assignDialogOpen, setAssignDialogOpen] = useState(false);
+  const [selectedPickup, setSelectedPickup] = useState(null);
+  const [partialDeliveryDialogOpen, setPartialDeliveryDialogOpen] = useState(false);
+  
+  // Seller pickup form
+  const [sellerForm, setSellerForm] = useState({
+    seller_name: "",
+    seller_address: "",
+    seller_phone: "",
+    pickup_items: [
+      { category: "apparel", quantity: 0 },
+      { category: "footwear", quantity: 0 },
+      { category: "accessories", quantity: 0 },
+      { category: "handbags", quantity: 0 }
+    ]
+  });
+  
+  // Customer return form
+  const [returnForm, setReturnForm] = useState({
+    customer_name: "",
+    customer_address: "",
+    customer_phone: "",
+    original_awb: "",
+    return_reason: ""
+  });
+  
+  // Personal shopping form
+  const [shoppingForm, setShoppingForm] = useState({
+    customer_name: "",
+    customer_address: "",
+    customer_phone: "",
+    shopping_items: [{ item_name: "", value: 0 }]
+  });
+
+  const fetchPickups = useCallback(async () => {
+    try {
+      const params = activeTab !== "all" ? { pickup_type: activeTab } : {};
+      const response = await axios.get(`${API}/pickups`, { params });
+      setPickups(response.data);
+    } catch (e) {
+      toast.error("Failed to fetch pickups");
+    } finally {
+      setLoading(false);
+    }
+  }, [activeTab]);
+
+  const fetchChamps = useCallback(async () => {
+    try {
+      const response = await axios.get(`${API}/champs`);
+      setChamps(response.data.filter(c => c.is_active));
+    } catch (e) {
+      console.error("Failed to fetch champs");
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchPickups();
+    fetchChamps();
+  }, [fetchPickups, fetchChamps]);
+
+  const handleCreateSellerPickup = async () => {
+    try {
+      const items = sellerForm.pickup_items.filter(item => item.quantity > 0);
+      if (items.length === 0) {
+        toast.error("Please add at least one item with quantity > 0");
+        return;
+      }
+      await axios.post(`${API}/pickups/seller`, {
+        ...sellerForm,
+        pickup_items: items
+      });
+      toast.success("Seller pickup created successfully");
+      setDialogOpen(false);
+      resetForms();
+      fetchPickups();
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Failed to create pickup");
+    }
+  };
+
+  const handleCreateCustomerReturn = async () => {
+    try {
+      await axios.post(`${API}/pickups/customer-return`, returnForm);
+      toast.success("Customer return pickup created successfully");
+      setDialogOpen(false);
+      resetForms();
+      fetchPickups();
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Failed to create pickup");
+    }
+  };
+
+  const handleCreatePersonalShopping = async () => {
+    try {
+      const items = shoppingForm.shopping_items.filter(item => item.item_name && item.value > 0);
+      if (items.length === 0) {
+        toast.error("Please add at least one item with name and value");
+        return;
+      }
+      await axios.post(`${API}/pickups/personal-shopping`, {
+        ...shoppingForm,
+        shopping_items: items.map(i => ({ ...i, is_delivered: false }))
+      });
+      toast.success("Personal shopping order created successfully");
+      setDialogOpen(false);
+      resetForms();
+      fetchPickups();
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Failed to create pickup");
+    }
+  };
+
+  const handleAssignChamp = async (champId) => {
+    try {
+      await axios.post(`${API}/pickups/${selectedPickup.id}/assign/${champId}`);
+      toast.success("Champ assigned successfully");
+      setAssignDialogOpen(false);
+      setSelectedPickup(null);
+      fetchPickups();
+    } catch (e) {
+      toast.error("Failed to assign champ");
+    }
+  };
+
+  const handleUpdateShoppingItems = async (items) => {
+    try {
+      await axios.put(`${API}/pickups/${selectedPickup.id}/shopping-items`, items);
+      toast.success("Delivery status updated");
+      setPartialDeliveryDialogOpen(false);
+      setSelectedPickup(null);
+      fetchPickups();
+    } catch (e) {
+      toast.error("Failed to update delivery status");
+    }
+  };
+
+  const resetForms = () => {
+    setSellerForm({
+      seller_name: "",
+      seller_address: "",
+      seller_phone: "",
+      pickup_items: [
+        { category: "apparel", quantity: 0 },
+        { category: "footwear", quantity: 0 },
+        { category: "accessories", quantity: 0 },
+        { category: "handbags", quantity: 0 }
+      ]
+    });
+    setReturnForm({
+      customer_name: "",
+      customer_address: "",
+      customer_phone: "",
+      original_awb: "",
+      return_reason: ""
+    });
+    setShoppingForm({
+      customer_name: "",
+      customer_address: "",
+      customer_phone: "",
+      shopping_items: [{ item_name: "", value: 0 }]
+    });
+  };
+
+  const addShoppingItem = () => {
+    setShoppingForm({
+      ...shoppingForm,
+      shopping_items: [...shoppingForm.shopping_items, { item_name: "", value: 0 }]
+    });
+  };
+
+  const updateShoppingItem = (index, field, value) => {
+    const items = [...shoppingForm.shopping_items];
+    items[index][field] = field === "value" ? parseFloat(value) || 0 : value;
+    setShoppingForm({ ...shoppingForm, shopping_items: items });
+  };
+
+  const removeShoppingItem = (index) => {
+    const items = shoppingForm.shopping_items.filter((_, i) => i !== index);
+    setShoppingForm({ ...shoppingForm, shopping_items: items.length ? items : [{ item_name: "", value: 0 }] });
+  };
+
+  const statusColors = {
+    pending: "bg-gray-500",
+    assigned: "bg-blue-500",
+    in_progress: "bg-amber-500",
+    completed: "bg-green-500",
+    cancelled: "bg-red-500",
+    partial: "bg-orange-500"
+  };
+
+  const pickupTypeLabels = {
+    seller_pickup: "Seller Pickup",
+    customer_return: "Customer Return",
+    personal_shopping: "Personal Shopping"
+  };
+
+  const categoryLabels = {
+    apparel: "Apparel",
+    footwear: "Footwear",
+    accessories: "Accessories",
+    handbags: "Handbags"
+  };
+
+  return (
+    <div className="space-y-6" data-testid="pickups-page">
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <h1 className="text-2xl lg:text-3xl font-bold">Pickups</h1>
+        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+          <DialogTrigger asChild>
+            <Button data-testid="add-pickup-btn">
+              <Plus className="h-4 w-4 mr-2" />
+              New Pickup
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Create New Pickup</DialogTitle>
+              <DialogDescription>Select pickup type and fill in details</DialogDescription>
+            </DialogHeader>
+            
+            <Tabs value={createType} onValueChange={setCreateType} className="mt-4">
+              <TabsList className="grid grid-cols-3 w-full">
+                <TabsTrigger value="seller_pickup" data-testid="tab-seller-pickup">Seller Pickup</TabsTrigger>
+                <TabsTrigger value="customer_return" data-testid="tab-customer-return">Customer Return</TabsTrigger>
+                <TabsTrigger value="personal_shopping" data-testid="tab-personal-shopping">Personal Shopping</TabsTrigger>
+              </TabsList>
+              
+              {/* Seller Pickup Form */}
+              <TabsContent value="seller_pickup" className="space-y-4 mt-4">
+                <div>
+                  <Label>Seller Name</Label>
+                  <Input
+                    value={sellerForm.seller_name}
+                    onChange={(e) => setSellerForm({ ...sellerForm, seller_name: e.target.value })}
+                    data-testid="seller-name-input"
+                  />
+                </div>
+                <div>
+                  <Label>Seller Address</Label>
+                  <Textarea
+                    value={sellerForm.seller_address}
+                    onChange={(e) => setSellerForm({ ...sellerForm, seller_address: e.target.value })}
+                    data-testid="seller-address-input"
+                  />
+                </div>
+                <div>
+                  <Label>Seller Phone</Label>
+                  <Input
+                    value={sellerForm.seller_phone}
+                    onChange={(e) => setSellerForm({ ...sellerForm, seller_phone: e.target.value })}
+                    data-testid="seller-phone-input"
+                  />
+                </div>
+                <div className="space-y-3">
+                  <Label className="text-base font-semibold">Categories & Quantities</Label>
+                  {sellerForm.pickup_items.map((item, index) => (
+                    <div key={item.category} className="flex items-center gap-3">
+                      <span className="w-28 text-sm font-medium">{categoryLabels[item.category]}</span>
+                      <Input
+                        type="number"
+                        min="0"
+                        value={item.quantity}
+                        onChange={(e) => {
+                          const items = [...sellerForm.pickup_items];
+                          items[index].quantity = parseInt(e.target.value) || 0;
+                          setSellerForm({ ...sellerForm, pickup_items: items });
+                        }}
+                        className="w-24"
+                        data-testid={`quantity-${item.category}`}
+                      />
+                      <span className="text-sm text-muted-foreground">units</span>
+                    </div>
+                  ))}
+                </div>
+                <Button onClick={handleCreateSellerPickup} className="w-full" data-testid="create-seller-pickup-btn">
+                  Create Seller Pickup
+                </Button>
+              </TabsContent>
+              
+              {/* Customer Return Form */}
+              <TabsContent value="customer_return" className="space-y-4 mt-4">
+                <div>
+                  <Label>Customer Name</Label>
+                  <Input
+                    value={returnForm.customer_name}
+                    onChange={(e) => setReturnForm({ ...returnForm, customer_name: e.target.value })}
+                    data-testid="return-customer-name"
+                  />
+                </div>
+                <div>
+                  <Label>Customer Address</Label>
+                  <Textarea
+                    value={returnForm.customer_address}
+                    onChange={(e) => setReturnForm({ ...returnForm, customer_address: e.target.value })}
+                    data-testid="return-customer-address"
+                  />
+                </div>
+                <div>
+                  <Label>Customer Phone</Label>
+                  <Input
+                    value={returnForm.customer_phone}
+                    onChange={(e) => setReturnForm({ ...returnForm, customer_phone: e.target.value })}
+                    data-testid="return-customer-phone"
+                  />
+                </div>
+                <div>
+                  <Label>Original AWB (Optional)</Label>
+                  <Input
+                    value={returnForm.original_awb}
+                    onChange={(e) => setReturnForm({ ...returnForm, original_awb: e.target.value })}
+                    data-testid="return-original-awb"
+                  />
+                </div>
+                <div>
+                  <Label>Return Reason</Label>
+                  <Textarea
+                    value={returnForm.return_reason}
+                    onChange={(e) => setReturnForm({ ...returnForm, return_reason: e.target.value })}
+                    data-testid="return-reason"
+                  />
+                </div>
+                <Button onClick={handleCreateCustomerReturn} className="w-full" data-testid="create-return-btn">
+                  Create Customer Return Pickup
+                </Button>
+              </TabsContent>
+              
+              {/* Personal Shopping Form */}
+              <TabsContent value="personal_shopping" className="space-y-4 mt-4">
+                <div>
+                  <Label>Customer Name</Label>
+                  <Input
+                    value={shoppingForm.customer_name}
+                    onChange={(e) => setShoppingForm({ ...shoppingForm, customer_name: e.target.value })}
+                    data-testid="shopping-customer-name"
+                  />
+                </div>
+                <div>
+                  <Label>Customer Address</Label>
+                  <Textarea
+                    value={shoppingForm.customer_address}
+                    onChange={(e) => setShoppingForm({ ...shoppingForm, customer_address: e.target.value })}
+                    data-testid="shopping-customer-address"
+                  />
+                </div>
+                <div>
+                  <Label>Customer Phone</Label>
+                  <Input
+                    value={shoppingForm.customer_phone}
+                    onChange={(e) => setShoppingForm({ ...shoppingForm, customer_phone: e.target.value })}
+                    data-testid="shopping-customer-phone"
+                  />
+                </div>
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-base font-semibold">Shopping Items</Label>
+                    <Button variant="outline" size="sm" onClick={addShoppingItem} data-testid="add-item-btn">
+                      <Plus className="h-4 w-4 mr-1" /> Add Item
+                    </Button>
+                  </div>
+                  {shoppingForm.shopping_items.map((item, index) => (
+                    <div key={index} className="flex items-center gap-2 p-3 bg-slate-50 rounded-lg">
+                      <Input
+                        placeholder="Item name"
+                        value={item.item_name}
+                        onChange={(e) => updateShoppingItem(index, "item_name", e.target.value)}
+                        className="flex-1"
+                        data-testid={`item-name-${index}`}
+                      />
+                      <Input
+                        type="number"
+                        placeholder="Value"
+                        value={item.value || ""}
+                        onChange={(e) => updateShoppingItem(index, "value", e.target.value)}
+                        className="w-28"
+                        data-testid={`item-value-${index}`}
+                      />
+                      <span className="text-sm">₹</span>
+                      {shoppingForm.shopping_items.length > 1 && (
+                        <Button variant="ghost" size="sm" onClick={() => removeShoppingItem(index)}>
+                          <XCircle className="h-4 w-4 text-red-500" />
+                        </Button>
+                      )}
+                    </div>
+                  ))}
+                  <div className="text-right text-sm font-medium">
+                    Total: ₹{shoppingForm.shopping_items.reduce((sum, i) => sum + (i.value || 0), 0).toLocaleString()}
+                  </div>
+                </div>
+                <Button onClick={handleCreatePersonalShopping} className="w-full" data-testid="create-shopping-btn">
+                  Create Personal Shopping Order
+                </Button>
+              </TabsContent>
+            </Tabs>
+          </DialogContent>
+        </Dialog>
+      </div>
+
+      {/* Filter Tabs */}
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
+        <TabsList>
+          <TabsTrigger value="seller_pickup">Seller Pickups</TabsTrigger>
+          <TabsTrigger value="customer_return">Customer Returns</TabsTrigger>
+          <TabsTrigger value="personal_shopping">Personal Shopping</TabsTrigger>
+        </TabsList>
+      </Tabs>
+
+      {/* Pickups Table */}
+      <Card>
+        <CardContent className="p-0">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Type</TableHead>
+                <TableHead>Name</TableHead>
+                <TableHead>Address</TableHead>
+                <TableHead>Phone</TableHead>
+                <TableHead>Details</TableHead>
+                <TableHead>Champ</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {loading ? (
+                <TableRow><TableCell colSpan={8} className="text-center py-8">Loading...</TableCell></TableRow>
+              ) : pickups.length === 0 ? (
+                <TableRow><TableCell colSpan={8} className="text-center py-8 text-muted-foreground">No pickups found</TableCell></TableRow>
+              ) : (
+                pickups.map((pickup) => (
+                  <TableRow key={pickup.id} data-testid={`pickup-row-${pickup.id}`}>
+                    <TableCell>
+                      <Badge variant="outline">{pickupTypeLabels[pickup.pickup_type]}</Badge>
+                    </TableCell>
+                    <TableCell className="font-medium">
+                      {pickup.seller_name || pickup.customer_name}
+                    </TableCell>
+                    <TableCell className="max-w-48 truncate">
+                      {pickup.seller_address || pickup.customer_address}
+                    </TableCell>
+                    <TableCell>{pickup.seller_phone || pickup.customer_phone}</TableCell>
+                    <TableCell>
+                      {pickup.pickup_type === "seller_pickup" && pickup.pickup_items?.length > 0 && (
+                        <div className="text-xs space-y-0.5">
+                          {pickup.pickup_items.map((item, i) => (
+                            <div key={i}>{categoryLabels[item.category]}: {item.quantity}</div>
+                          ))}
+                        </div>
+                      )}
+                      {pickup.pickup_type === "personal_shopping" && (
+                        <div className="text-xs">
+                          <div>{pickup.shopping_items?.length || 0} items</div>
+                          <div className="font-medium">₹{pickup.total_value?.toLocaleString()}</div>
+                          {pickup.status === "partial" && (
+                            <div className="text-orange-600">Collected: ₹{pickup.collected_value?.toLocaleString()}</div>
+                          )}
+                        </div>
+                      )}
+                      {pickup.pickup_type === "customer_return" && pickup.notes && (
+                        <div className="text-xs text-muted-foreground truncate max-w-32">{pickup.notes}</div>
+                      )}
+                    </TableCell>
+                    <TableCell>{pickup.champ_name || "-"}</TableCell>
+                    <TableCell>
+                      <Badge className={`${statusColors[pickup.status]} text-white`}>
+                        {pickup.status?.replace("_", " ").toUpperCase()}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex gap-1">
+                        {pickup.status === "pending" && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => { setSelectedPickup(pickup); setAssignDialogOpen(true); }}
+                            data-testid={`assign-btn-${pickup.id}`}
+                          >
+                            Assign
+                          </Button>
+                        )}
+                        {pickup.pickup_type === "personal_shopping" && pickup.status === "assigned" && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => { setSelectedPickup(pickup); setPartialDeliveryDialogOpen(true); }}
+                            data-testid={`mark-delivery-btn-${pickup.id}`}
+                          >
+                            Mark Delivery
+                          </Button>
+                        )}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+
+      {/* Assign Champ Dialog */}
+      <Dialog open={assignDialogOpen} onOpenChange={setAssignDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Assign Champ</DialogTitle>
+            <DialogDescription>Select a champ to assign this pickup</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 max-h-64 overflow-y-auto">
+            {champs.length === 0 ? (
+              <p className="text-muted-foreground text-center py-4">No active champs available</p>
+            ) : (
+              champs.map((champ) => (
+                <Button
+                  key={champ.id}
+                  variant="outline"
+                  className="w-full justify-start"
+                  onClick={() => handleAssignChamp(champ.id)}
+                  data-testid={`select-champ-${champ.id}`}
+                >
+                  <Users className="h-4 w-4 mr-2" />
+                  {champ.name} - {champ.phone}
+                </Button>
+              ))
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Partial Delivery Dialog for Personal Shopping */}
+      <Dialog open={partialDeliveryDialogOpen} onOpenChange={setPartialDeliveryDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Mark Delivery Status</DialogTitle>
+            <DialogDescription>
+              Check items that have been delivered. Unchecked items will be marked as not delivered (partial delivery).
+            </DialogDescription>
+          </DialogHeader>
+          {selectedPickup?.shopping_items && (
+            <div className="space-y-3">
+              {selectedPickup.shopping_items.map((item, index) => (
+                <div key={index} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
+                  <div className="flex items-center gap-3">
+                    <Checkbox
+                      checked={item.is_delivered}
+                      onCheckedChange={(checked) => {
+                        const items = [...selectedPickup.shopping_items];
+                        items[index].is_delivered = checked;
+                        setSelectedPickup({ ...selectedPickup, shopping_items: items });
+                      }}
+                      data-testid={`delivery-check-${index}`}
+                    />
+                    <span className={item.is_delivered ? "" : "text-muted-foreground"}>{item.item_name}</span>
+                  </div>
+                  <span className="font-medium">₹{item.value?.toLocaleString()}</span>
+                </div>
+              ))}
+              <div className="flex justify-between pt-2 border-t">
+                <span className="font-medium">Delivered Value:</span>
+                <span className="font-bold text-green-600">
+                  ₹{selectedPickup.shopping_items.filter(i => i.is_delivered).reduce((sum, i) => sum + i.value, 0).toLocaleString()}
+                </span>
+              </div>
+              <Button
+                className="w-full"
+                onClick={() => handleUpdateShoppingItems(selectedPickup.shopping_items)}
+                data-testid="confirm-delivery-btn"
+              >
+                Confirm Delivery Status
+              </Button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+};
+
 // ==================== NAVIGATION ====================
 const Navigation = ({ isOpen, setIsOpen }) => {
   const navItems = [

@@ -852,6 +852,124 @@ async def update_shopping_items(pickup_id: str, shopping_items: List[PersonalSho
     pickup = await db.pickups.find_one({"id": pickup_id}, {"_id": 0})
     return pickup
 
+@api_router.post("/pickups/{pickup_id}/complete-with-proof", response_model=Pickup)
+async def complete_pickup_with_proof(pickup_id: str, proof: PickupCompletionProof):
+    """Complete a pickup with proof (image, location, notes)"""
+    pickup = await db.pickups.find_one({"id": pickup_id}, {"_id": 0})
+    if not pickup:
+        raise HTTPException(status_code=404, detail="Pickup not found")
+    
+    update_data = {
+        "status": PickupStatus.COMPLETED.value,
+        "collected_value": proof.collected_value,
+        "proof_image": proof.proof_image_base64,
+        "proof_latitude": proof.latitude,
+        "proof_longitude": proof.longitude,
+        "completion_notes": proof.notes,
+        "completed_at": datetime.now(timezone.utc).isoformat(),
+        "updated_at": datetime.now(timezone.utc).isoformat()
+    }
+    
+    # For personal shopping with partial delivery
+    if pickup.get("pickup_type") == PickupType.PERSONAL_SHOPPING.value:
+        shopping_items = pickup.get("shopping_items", [])
+        if proof.delivered_item_indices is not None:
+            for i, item in enumerate(shopping_items):
+                item["is_delivered"] = i in proof.delivered_item_indices
+            update_data["shopping_items"] = shopping_items
+            
+            delivered_value = sum(item["value"] for item in shopping_items if item.get("is_delivered"))
+            total_value = sum(item["value"] for item in shopping_items)
+            
+            if delivered_value < total_value and delivered_value > 0:
+                update_data["status"] = PickupStatus.PARTIAL.value
+            
+            update_data["collected_value"] = delivered_value
+        
+        # Create history entry
+        delivered_items = [item["item_name"] for item in shopping_items if item.get("is_delivered")]
+        history_entry = ShoppingHistoryEntry(
+            pickup_id=pickup_id,
+            action="partial_delivery" if update_data["status"] == PickupStatus.PARTIAL.value else "full_delivery",
+            items_delivered=delivered_items,
+            value_collected=update_data["collected_value"],
+            champ_id=pickup.get("champ_id"),
+            champ_name=pickup.get("champ_name"),
+            proof_image=proof.proof_image_base64,
+            latitude=proof.latitude,
+            longitude=proof.longitude,
+            notes=proof.notes
+        )
+        history_doc = prepare_doc_for_db(history_entry.model_dump())
+        await db.shopping_history.insert_one(history_doc)
+    
+    await db.pickups.update_one({"id": pickup_id}, {"$set": update_data})
+    pickup = await db.pickups.find_one({"id": pickup_id}, {"_id": 0})
+    return pickup
+
+@api_router.get("/pickups/{pickup_id}/history", response_model=List[ShoppingHistoryEntry])
+async def get_pickup_history(pickup_id: str):
+    """Get delivery history for a personal shopping pickup"""
+    history = await db.shopping_history.find(
+        {"pickup_id": pickup_id}, 
+        {"_id": 0}
+    ).sort("created_at", -1).to_list(100)
+    return history
+
+@api_router.post("/pickups/{pickup_id}/add-delivery", response_model=Pickup)
+async def add_partial_delivery(pickup_id: str, proof: PickupCompletionProof):
+    """Add another partial delivery to a personal shopping pickup"""
+    pickup = await db.pickups.find_one({"id": pickup_id}, {"_id": 0})
+    if not pickup:
+        raise HTTPException(status_code=404, detail="Pickup not found")
+    
+    if pickup.get("pickup_type") != PickupType.PERSONAL_SHOPPING.value:
+        raise HTTPException(status_code=400, detail="This endpoint is only for personal shopping pickups")
+    
+    shopping_items = pickup.get("shopping_items", [])
+    
+    # Mark newly delivered items
+    if proof.delivered_item_indices:
+        for i in proof.delivered_item_indices:
+            if i < len(shopping_items):
+                shopping_items[i]["is_delivered"] = True
+    
+    delivered_value = sum(item["value"] for item in shopping_items if item.get("is_delivered"))
+    total_value = sum(item["value"] for item in shopping_items)
+    
+    status = PickupStatus.PARTIAL.value if delivered_value < total_value else PickupStatus.COMPLETED.value
+    
+    # Create history entry
+    delivered_items = [shopping_items[i]["item_name"] for i in (proof.delivered_item_indices or []) if i < len(shopping_items)]
+    history_entry = ShoppingHistoryEntry(
+        pickup_id=pickup_id,
+        action="partial_delivery",
+        items_delivered=delivered_items,
+        value_collected=sum(shopping_items[i]["value"] for i in (proof.delivered_item_indices or []) if i < len(shopping_items)),
+        champ_id=pickup.get("champ_id"),
+        champ_name=pickup.get("champ_name"),
+        proof_image=proof.proof_image_base64,
+        latitude=proof.latitude,
+        longitude=proof.longitude,
+        notes=proof.notes
+    )
+    history_doc = prepare_doc_for_db(history_entry.model_dump())
+    await db.shopping_history.insert_one(history_doc)
+    
+    # Update pickup
+    await db.pickups.update_one(
+        {"id": pickup_id},
+        {"$set": {
+            "shopping_items": shopping_items,
+            "collected_value": delivered_value,
+            "status": status,
+            "updated_at": datetime.now(timezone.utc).isoformat()
+        }}
+    )
+    
+    pickup = await db.pickups.find_one({"id": pickup_id}, {"_id": 0})
+    return pickup
+
 # ==================== DASHBOARD STATS ====================
 @api_router.get("/dashboard/stats")
 async def get_dashboard_stats():

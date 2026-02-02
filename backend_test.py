@@ -289,6 +289,31 @@ class LastMileDeliveryTester:
         
         return success
 
+    def test_logistics_flow(self):
+        """Test basic logistics operations"""
+        print("\n=== Testing Logistics Flow ===")
+        
+        if not self.created_ids['shipments']:
+            print("⚠️  No shipments available for logistics testing")
+            return False
+        
+        shipment_id = self.created_ids['shipments'][0]
+        
+        # Get shipment details first
+        success, shipment = self.run_test("Get Shipment for Logistics", "GET", f"shipments/{shipment_id}", 200)
+        if not success:
+            return False
+        
+        awb = shipment.get('awb')
+        if not awb:
+            print("❌ No AWB found in shipment")
+            return False
+        
+        # Test in-scan
+        success, _ = self.run_test("In-Scan Shipment", "POST", f"logistics/in-scan/{awb}", 200)
+        
+        return success
+
 def main():
     print("🚀 Starting Last Mile Delivery Management System API Tests")
     print("=" * 60)
@@ -297,9 +322,11 @@ def main():
     
     # Run test suites
     basic_ok = tester.test_basic_endpoints()
+    dashboard_stats_ok = tester.test_dashboard_stats()  # NEW
+    test_awbs_ok = tester.test_test_awbs()  # NEW
     champ_ok = tester.test_champ_operations()
     shipment_ok = tester.test_shipment_operations()
-    pickup_ok = tester.test_pickup_operations()  # Main focus
+    pickup_ok = tester.test_pickup_operations()  # Enhanced with new features
     logistics_ok = tester.test_logistics_flow()
     
     # Print summary
@@ -312,9 +339,11 @@ def main():
     
     print(f"\nTest Suite Results:")
     print(f"  Basic Endpoints: {'✅' if basic_ok else '❌'}")
+    print(f"  Dashboard Pickup Stats: {'✅' if dashboard_stats_ok else '❌'} (NEW)")
+    print(f"  Test AWBs (10 AWBs): {'✅' if test_awbs_ok else '❌'} (NEW)")
     print(f"  Champ Operations: {'✅' if champ_ok else '❌'}")
     print(f"  Shipment Operations: {'✅' if shipment_ok else '❌'}")
-    print(f"  Pickup Operations: {'✅' if pickup_ok else '❌'} (Main Feature)")
+    print(f"  Pickup Operations: {'✅' if pickup_ok else '❌'} (Enhanced with Complete with Proof)")
     print(f"  Logistics Flow: {'✅' if logistics_ok else '❌'}")
     
     print(f"\nCreated Test Data:")
@@ -322,8 +351,8 @@ def main():
     print(f"  Shipments: {len(tester.created_ids['shipments'])}")
     print(f"  Pickups: {len(tester.created_ids['pickups'])}")
     
-    # Return 0 if all critical tests pass (focus on pickups)
-    critical_passed = pickup_ok and basic_ok
+    # Return 0 if all critical tests pass (focus on new features)
+    critical_passed = pickup_ok and dashboard_stats_ok and basic_ok
     return 0 if critical_passed else 1
 
 if __name__ == "__main__":

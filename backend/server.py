@@ -117,6 +117,17 @@ class Shipment(BaseModel):
     run_sheet_id: Optional[str] = None
     delivery_notes: Optional[str] = None
     rescheduled_date: Optional[str] = None
+    inscan_date: Optional[str] = None
+    inscan_time: Optional[str] = None
+    # Delivery proof fields
+    delivery_proof_image: Optional[str] = None
+    delivery_latitude: Optional[float] = None
+    delivery_longitude: Optional[float] = None
+    delivery_timestamp: Optional[str] = None
+    delivered_by_champ_id: Optional[str] = None
+    delivered_by_champ_name: Optional[str] = None
+    cancellation_reason: Optional[str] = None
+    reschedule_reason: Optional[str] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 

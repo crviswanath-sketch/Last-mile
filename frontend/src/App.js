@@ -510,26 +510,53 @@ const Shipments = () => {
         </div>
       </div>
 
-      <div className="flex items-center gap-4">
-        <Label>Filter by Status:</Label>
-        <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-48" data-testid="status-filter">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Statuses</SelectItem>
-            <SelectItem value="pending_handover">Pending Handover</SelectItem>
-            <SelectItem value="in_scanned">In Scanned</SelectItem>
-            <SelectItem value="assigned_to_bin">Assigned to Bin</SelectItem>
-            <SelectItem value="assigned_to_champ">Assigned to Champ</SelectItem>
-            <SelectItem value="out_for_delivery">Out for Delivery</SelectItem>
-            <SelectItem value="delivered">Delivered</SelectItem>
-            <SelectItem value="cancelled">Cancelled</SelectItem>
-            <SelectItem value="no_response">No Response</SelectItem>
-            <SelectItem value="rescheduled">Rescheduled</SelectItem>
-            <SelectItem value="returned_to_wh">Returned to WH</SelectItem>
-          </SelectContent>
-        </Select>
+      <div className="flex flex-wrap items-center gap-4">
+        <div className="flex items-center gap-2">
+          <Label>Status:</Label>
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger className="w-48" data-testid="status-filter">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Statuses</SelectItem>
+              <SelectItem value="pending_handover">Pending Handover</SelectItem>
+              <SelectItem value="in_scanned">In Scanned</SelectItem>
+              <SelectItem value="assigned_to_bin">Assigned to Bin</SelectItem>
+              <SelectItem value="assigned_to_champ">Assigned to Champ</SelectItem>
+              <SelectItem value="out_for_delivery">Out for Delivery</SelectItem>
+              <SelectItem value="delivered">Delivered</SelectItem>
+              <SelectItem value="cancelled">Cancelled</SelectItem>
+              <SelectItem value="no_response">No Response</SelectItem>
+              <SelectItem value="rescheduled">Rescheduled</SelectItem>
+              <SelectItem value="returned_to_wh">Returned to WH</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="flex items-center gap-2">
+          <Label>Inscan Date:</Label>
+          <Input
+            type="date"
+            value={dateFrom}
+            onChange={(e) => setDateFrom(e.target.value)}
+            className="w-36"
+            placeholder="From"
+            data-testid="date-from-filter"
+          />
+          <span>to</span>
+          <Input
+            type="date"
+            value={dateTo}
+            onChange={(e) => setDateTo(e.target.value)}
+            className="w-36"
+            placeholder="To"
+            data-testid="date-to-filter"
+          />
+          {(dateFrom || dateTo) && (
+            <Button variant="ghost" size="sm" onClick={() => { setDateFrom(""); setDateTo(""); }}>
+              Clear
+            </Button>
+          )}
+        </div>
         <Button variant="outline" onClick={fetchShipments} data-testid="refresh-btn">
           <RefreshCw className="h-4 w-4" />
         </Button>
@@ -545,14 +572,15 @@ const Shipments = () => {
                 <TableHead>Route</TableHead>
                 <TableHead>Payment</TableHead>
                 <TableHead>Value</TableHead>
+                <TableHead>Inscan Date/Time</TableHead>
                 <TableHead>Status</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {loading ? (
-                <TableRow><TableCell colSpan={6} className="text-center">Loading...</TableCell></TableRow>
+                <TableRow><TableCell colSpan={7} className="text-center">Loading...</TableCell></TableRow>
               ) : shipments.length === 0 ? (
-                <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground">No shipments found</TableCell></TableRow>
+                <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground">No shipments found</TableCell></TableRow>
               ) : (
                 shipments.map((shipment) => (
                   <TableRow key={shipment.id} data-testid={`shipment-row-${shipment.awb}`}>
@@ -568,6 +596,16 @@ const Shipments = () => {
                       </Badge>
                     </TableCell>
                     <TableCell>₹{shipment.value.toFixed(2)}</TableCell>
+                    <TableCell>
+                      {shipment.inscan_date ? (
+                        <div>
+                          <div className="text-sm">{shipment.inscan_date}</div>
+                          <div className="text-xs text-muted-foreground">{shipment.inscan_time}</div>
+                        </div>
+                      ) : (
+                        <span className="text-muted-foreground">-</span>
+                      )}
+                    </TableCell>
                     <TableCell>
                       <Badge className={`${statusColors[shipment.status]} text-white`}>
                         {statusLabels[shipment.status]}

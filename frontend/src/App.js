@@ -1900,6 +1900,16 @@ const Pickups = () => {
   const [assignDialogOpen, setAssignDialogOpen] = useState(false);
   const [selectedPickup, setSelectedPickup] = useState(null);
   const [partialDeliveryDialogOpen, setPartialDeliveryDialogOpen] = useState(false);
+  const [completionDialogOpen, setCompletionDialogOpen] = useState(false);
+  const [historyDialogOpen, setHistoryDialogOpen] = useState(false);
+  const [pickupHistory, setPickupHistory] = useState([]);
+  const [completionProof, setCompletionProof] = useState({
+    proof_image_base64: "",
+    latitude: "",
+    longitude: "",
+    notes: ""
+  });
+  const [gettingLocation, setGettingLocation] = useState(false);
   
   // Seller pickup form
   const [sellerForm, setSellerForm] = useState({

@@ -179,6 +179,67 @@ class DeliveryAttemptCreate(BaseModel):
     notes: Optional[str] = None
     rescheduled_date: Optional[str] = None
 
+# Pickup Item Model (for seller pickup categories)
+class PickupItem(BaseModel):
+    category: PickupCategory
+    quantity: int
+
+# Personal Shopping Item Model
+class PersonalShoppingItem(BaseModel):
+    item_name: str
+    value: float
+    is_delivered: bool = False
+
+# Pickup Models
+class Pickup(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    pickup_type: PickupType
+    status: PickupStatus = PickupStatus.PENDING
+    seller_name: Optional[str] = None
+    seller_address: Optional[str] = None
+    seller_phone: Optional[str] = None
+    customer_name: Optional[str] = None
+    customer_address: Optional[str] = None
+    customer_phone: Optional[str] = None
+    # For seller pickup
+    pickup_items: List[PickupItem] = []
+    # For personal shopping
+    shopping_items: List[PersonalShoppingItem] = []
+    total_value: float = 0
+    collected_value: float = 0
+    champ_id: Optional[str] = None
+    champ_name: Optional[str] = None
+    notes: Optional[str] = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+class SellerPickupCreate(BaseModel):
+    seller_name: str
+    seller_address: str
+    seller_phone: str
+    pickup_items: List[PickupItem]
+
+class CustomerReturnCreate(BaseModel):
+    customer_name: str
+    customer_address: str
+    customer_phone: str
+    original_awb: Optional[str] = None
+    return_reason: Optional[str] = None
+
+class PersonalShoppingCreate(BaseModel):
+    customer_name: str
+    customer_address: str
+    customer_phone: str
+    shopping_items: List[PersonalShoppingItem]
+
+class PickupUpdate(BaseModel):
+    status: Optional[PickupStatus] = None
+    champ_id: Optional[str] = None
+    notes: Optional[str] = None
+    collected_value: Optional[float] = None
+    shopping_items: Optional[List[PersonalShoppingItem]] = None
+
 # ==================== HELPER FUNCTIONS ====================
 def serialize_datetime(obj):
     """Convert datetime objects to ISO string for MongoDB storage"""

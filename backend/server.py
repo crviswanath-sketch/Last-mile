@@ -53,6 +53,7 @@ class PickupType(str, Enum):
     SELLER_PICKUP = "seller_pickup"
     CUSTOMER_RETURN = "customer_return"
     PERSONAL_SHOPPING = "personal_shopping"
+    UNSUBMITTED_ITEMS = "unsubmitted_items"
 
 class PickupStatus(str, Enum):
     PENDING = "pending"

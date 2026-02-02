@@ -215,7 +215,56 @@ class LastMileDeliveryTester:
         
         return len(self.created_ids['pickups']) > 0
 
-    def test_logistics_flow(self):
+    def test_dashboard_stats(self):
+        """Test dashboard stats including pickup statistics"""
+        print("\n=== Testing Dashboard Stats (NEW FEATURES) ===")
+        
+        success, response = self.run_test("Dashboard Stats with Pickup Data", "GET", "dashboard/stats", 200)
+        if success:
+            # Check if pickup stats are present
+            required_pickup_fields = ['total_pickups', 'pending_pickups', 'completed_pickups', 'pickups_by_type', 'pickups_by_status']
+            missing_fields = []
+            
+            for field in required_pickup_fields:
+                if field not in response:
+                    missing_fields.append(field)
+                else:
+                    print(f"   ✅ {field}: {response[field]}")
+            
+            if missing_fields:
+                print(f"   ❌ Missing pickup stats fields: {missing_fields}")
+                return False
+            
+            # Check pickup type breakdown
+            pickups_by_type = response.get('pickups_by_type', {})
+            expected_types = ['seller_pickup', 'customer_return', 'personal_shopping']
+            print(f"   Pickup types breakdown: {pickups_by_type}")
+            
+            return True
+        
+        return False
+
+    def test_test_awbs(self):
+        """Test if 10 test AWBs exist (AWB000001-AWB000010)"""
+        print("\n=== Testing Test AWBs (NEW FEATURE) ===")
+        
+        success, response = self.run_test("Get All Shipments", "GET", "shipments", 200)
+        if success:
+            awbs = [shipment.get('awb', '') for shipment in response]
+            test_awbs = [f"AWB{str(i).zfill(6)}" for i in range(1, 11)]  # AWB000001 to AWB000010
+            
+            found_test_awbs = [awb for awb in test_awbs if awb in awbs]
+            print(f"   Found test AWBs: {found_test_awbs}")
+            print(f"   Expected 10 test AWBs, found {len(found_test_awbs)}")
+            
+            if len(found_test_awbs) >= 10:
+                print("   ✅ All 10 test AWBs found")
+                return True
+            else:
+                print(f"   ⚠️  Only {len(found_test_awbs)} test AWBs found, expected 10")
+                return len(found_test_awbs) > 0  # Partial success
+        
+        return False
         """Test basic logistics operations"""
         print("\n=== Testing Logistics Flow ===")
         

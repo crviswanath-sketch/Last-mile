@@ -1085,9 +1085,10 @@ async def champ_delivery_action(action: ChampDeliveryAction):
         # Record payment if collected
         if action.payment_collected > 0:
             # Create delivery attempt record
+            run_sheet_id = shipment.get("run_sheet_id") or "direct_delivery"
             attempt = DeliveryAttemptCreate(
                 shipment_id=action.shipment_id,
-                run_sheet_id=shipment.get("run_sheet_id", ""),
+                run_sheet_id=run_sheet_id,
                 outcome=DeliveryOutcome.DELIVERED,
                 payment_collected=action.payment_collected,
                 payment_method_used=action.payment_method_used,

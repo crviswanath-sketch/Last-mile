@@ -2309,6 +2309,58 @@ const Pickups = () => {
                 </Button>
               </TabsContent>
               
+              {/* Unsubmitted Items Form - Same as Seller Pickup */}
+              <TabsContent value="unsubmitted_items" className="space-y-4 mt-4">
+                <div>
+                  <Label>Seller Name</Label>
+                  <Input
+                    value={sellerForm.seller_name}
+                    onChange={(e) => setSellerForm({ ...sellerForm, seller_name: e.target.value })}
+                    data-testid="unsubmitted-seller-name"
+                  />
+                </div>
+                <div>
+                  <Label>Seller Address</Label>
+                  <Textarea
+                    value={sellerForm.seller_address}
+                    onChange={(e) => setSellerForm({ ...sellerForm, seller_address: e.target.value })}
+                    data-testid="unsubmitted-seller-address"
+                  />
+                </div>
+                <div>
+                  <Label>Seller Phone</Label>
+                  <Input
+                    value={sellerForm.seller_phone}
+                    onChange={(e) => setSellerForm({ ...sellerForm, seller_phone: e.target.value })}
+                    data-testid="unsubmitted-seller-phone"
+                  />
+                </div>
+                <div className="space-y-3">
+                  <Label className="text-base font-semibold">Categories & Quantities</Label>
+                  {sellerForm.pickup_items.map((item, index) => (
+                    <div key={item.category} className="flex items-center gap-3">
+                      <span className="w-28 text-sm font-medium">{categoryLabels[item.category]}</span>
+                      <Input
+                        type="number"
+                        min="0"
+                        value={item.quantity}
+                        onChange={(e) => {
+                          const items = [...sellerForm.pickup_items];
+                          items[index].quantity = parseInt(e.target.value) || 0;
+                          setSellerForm({ ...sellerForm, pickup_items: items });
+                        }}
+                        className="w-24"
+                        data-testid={`unsubmitted-quantity-${item.category}`}
+                      />
+                      <span className="text-sm text-muted-foreground">units</span>
+                    </div>
+                  ))}
+                </div>
+                <Button onClick={handleCreateUnsubmittedItems} className="w-full" data-testid="create-unsubmitted-btn">
+                  Create Unsubmitted Items Pickup
+                </Button>
+              </TabsContent>
+              
               {/* Customer Return Form */}
               <TabsContent value="customer_return" className="space-y-4 mt-4">
                 <div>

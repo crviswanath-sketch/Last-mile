@@ -227,6 +227,8 @@ const Shipments = () => {
   const [scanAwb, setScanAwb] = useState("");
   const [useCameraScanner, setUseCameraScanner] = useState(true);
   const [scannedList, setScannedList] = useState([]);
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
   const [newShipment, setNewShipment] = useState({
     awb: "",
     recipient_name: "",
@@ -239,7 +241,10 @@ const Shipments = () => {
 
   const fetchShipments = useCallback(async () => {
     try {
-      const params = statusFilter !== "all" ? { status: statusFilter } : {};
+      const params = {};
+      if (statusFilter !== "all") params.status = statusFilter;
+      if (dateFrom) params.inscan_date_from = dateFrom;
+      if (dateTo) params.inscan_date_to = dateTo;
       const response = await axios.get(`${API}/shipments`, { params });
       setShipments(response.data);
     } catch (e) {
@@ -247,7 +252,7 @@ const Shipments = () => {
     } finally {
       setLoading(false);
     }
-  }, [statusFilter]);
+  }, [statusFilter, dateFrom, dateTo]);
 
   useEffect(() => {
     fetchShipments();

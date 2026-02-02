@@ -2538,6 +2538,7 @@ function App() {
           <Routes>
             <Route path="/" element={<Dashboard />} />
             <Route path="/shipments" element={<Shipments />} />
+            <Route path="/pickups" element={<Pickups />} />
             <Route path="/bin-locations" element={<BinLocations />} />
             <Route path="/champs" element={<Champs />} />
             <Route path="/run-sheets" element={<RunSheets />} />

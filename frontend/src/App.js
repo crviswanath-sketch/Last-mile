@@ -2030,6 +2030,26 @@ const Pickups = () => {
     }
   };
 
+  const handleCreateUnsubmittedItems = async () => {
+    try {
+      const items = sellerForm.pickup_items.filter(item => item.quantity > 0);
+      if (items.length === 0) {
+        toast.error("Please add at least one item with quantity > 0");
+        return;
+      }
+      await axios.post(`${API}/pickups/unsubmitted-items`, {
+        ...sellerForm,
+        pickup_items: items
+      });
+      toast.success("Unsubmitted items pickup created successfully");
+      setDialogOpen(false);
+      resetForms();
+      fetchPickups();
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Failed to create pickup");
+    }
+  };
+
   const handleCreateCustomerReturn = async () => {
     try {
       await axios.post(`${API}/pickups/customer-return`, returnForm);

@@ -3284,6 +3284,7 @@ const Navigation = ({ isOpen, setIsOpen }) => {
     { path: "/champs", icon: Users, label: "Champs" },
     { path: "/run-sheets", icon: FileText, label: "Run Sheets" },
     { path: "/delivery", icon: Truck, label: "Delivery" },
+    { path: "/champ-view", icon: UserCheck, label: "Champ View" },
     { path: "/returns", icon: RefreshCw, label: "Returns" },
   ];
 

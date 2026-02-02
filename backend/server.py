@@ -279,6 +279,27 @@ class ShoppingHistoryEntry(BaseModel):
     notes: Optional[str] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
+# Unsubmitted Items Pickup Create (same structure as seller pickup)
+class UnsubmittedItemsCreate(BaseModel):
+    seller_name: str
+    seller_address: str
+    seller_phone: str
+    pickup_items: List[PickupItem]
+    notes: Optional[str] = None
+
+# Champ Delivery Action Model
+class ChampDeliveryAction(BaseModel):
+    shipment_id: str
+    action: DeliveryOutcome  # delivered, cancelled, rescheduled
+    proof_image_base64: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    notes: Optional[str] = None
+    payment_collected: float = 0
+    payment_method_used: Optional[PaymentMethod] = None
+    reschedule_date: Optional[str] = None
+    cancellation_reason: Optional[str] = None
+
 # ==================== HELPER FUNCTIONS ====================
 def serialize_datetime(obj):
     """Convert datetime objects to ISO string for MongoDB storage"""

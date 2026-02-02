@@ -2582,6 +2582,176 @@ const Pickups = () => {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Completion with Proof Dialog */}
+      <Dialog open={completionDialogOpen} onOpenChange={setCompletionDialogOpen}>
+        <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Complete Pickup with Proof</DialogTitle>
+            <DialogDescription>
+              Capture proof of pickup completion with photo and location
+            </DialogDescription>
+          </DialogHeader>
+          {selectedPickup && (
+            <div className="space-y-4">
+              <div className="p-3 bg-slate-50 rounded-lg">
+                <p className="text-sm"><strong>Type:</strong> {pickupTypeLabels[selectedPickup.pickup_type]}</p>
+                <p className="text-sm"><strong>Customer:</strong> {selectedPickup.seller_name || selectedPickup.customer_name}</p>
+                <p className="text-sm"><strong>Address:</strong> {selectedPickup.seller_address || selectedPickup.customer_address}</p>
+              </div>
+
+              {selectedPickup.pickup_type === "personal_shopping" && selectedPickup.shopping_items && (
+                <div className="space-y-2">
+                  <Label className="font-semibold">Items to Deliver:</Label>
+                  {selectedPickup.shopping_items.map((item, index) => (
+                    <div key={index} className="flex items-center gap-2 p-2 bg-slate-50 rounded">
+                      <Checkbox
+                        checked={item.is_delivered}
+                        onCheckedChange={(checked) => {
+                          const items = [...selectedPickup.shopping_items];
+                          items[index].is_delivered = checked;
+                          setSelectedPickup({ ...selectedPickup, shopping_items: items });
+                        }}
+                      />
+                      <span className="flex-1">{item.item_name}</span>
+                      <span className="font-medium">₹{item.value}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div>
+                <Label>Proof Photo</Label>
+                <Input
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  onChange={handleImageUpload}
+                  className="mt-1"
+                  data-testid="proof-image-input"
+                />
+                {completionProof.proof_image_base64 && (
+                  <img src={completionProof.proof_image_base64} alt="Proof" className="mt-2 w-full h-32 object-cover rounded" />
+                )}
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <Label>Latitude</Label>
+                  <Input
+                    value={completionProof.latitude}
+                    onChange={(e) => setCompletionProof({ ...completionProof, latitude: e.target.value })}
+                    placeholder="12.9716"
+                    data-testid="proof-latitude"
+                  />
+                </div>
+                <div>
+                  <Label>Longitude</Label>
+                  <Input
+                    value={completionProof.longitude}
+                    onChange={(e) => setCompletionProof({ ...completionProof, longitude: e.target.value })}
+                    placeholder="77.5946"
+                    data-testid="proof-longitude"
+                  />
+                </div>
+              </div>
+              <Button
+                variant="outline"
+                className="w-full"
+                onClick={getCurrentLocation}
+                disabled={gettingLocation}
+                data-testid="get-location-btn"
+              >
+                <MapPin className="h-4 w-4 mr-2" />
+                {gettingLocation ? "Getting Location..." : "Get Current Location"}
+              </Button>
+
+              <div>
+                <Label>Notes</Label>
+                <Textarea
+                  value={completionProof.notes}
+                  onChange={(e) => setCompletionProof({ ...completionProof, notes: e.target.value })}
+                  placeholder="Any additional notes..."
+                  data-testid="proof-notes"
+                />
+              </div>
+
+              <Button className="w-full" onClick={handleCompleteWithProof} data-testid="submit-proof-btn">
+                <CheckCircle2 className="h-4 w-4 mr-2" />
+                Complete Pickup
+              </Button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* History Dialog for Personal Shopping */}
+      <Dialog open={historyDialogOpen} onOpenChange={setHistoryDialogOpen}>
+        <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Delivery History</DialogTitle>
+            <DialogDescription>
+              Track all delivery attempts and partial deliveries for this order
+            </DialogDescription>
+          </DialogHeader>
+          {selectedPickup && (
+            <div className="space-y-4">
+              <div className="p-3 bg-slate-50 rounded-lg">
+                <p className="text-sm font-medium">{selectedPickup.customer_name}</p>
+                <p className="text-xs text-muted-foreground">Total Value: ₹{selectedPickup.total_value?.toLocaleString()}</p>
+                <p className="text-xs text-muted-foreground">Collected: ₹{selectedPickup.collected_value?.toLocaleString()}</p>
+              </div>
+
+              {selectedPickup.shopping_items && (
+                <div>
+                  <Label className="text-sm font-semibold">Current Item Status:</Label>
+                  <div className="mt-2 space-y-1">
+                    {selectedPickup.shopping_items.map((item, i) => (
+                      <div key={i} className={`flex justify-between text-sm p-2 rounded ${item.is_delivered ? 'bg-green-50' : 'bg-gray-50'}`}>
+                        <span>{item.item_name}</span>
+                        <span className={item.is_delivered ? 'text-green-600' : 'text-gray-500'}>
+                          {item.is_delivered ? '✓ Delivered' : 'Pending'} - ₹{item.value}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div>
+                <Label className="text-sm font-semibold">Delivery History:</Label>
+                {pickupHistory.length === 0 ? (
+                  <p className="text-sm text-muted-foreground text-center py-4">No delivery history yet</p>
+                ) : (
+                  <div className="mt-2 space-y-3">
+                    {pickupHistory.map((entry, i) => (
+                      <div key={entry.id || i} className="p-3 border rounded-lg">
+                        <div className="flex justify-between items-start">
+                          <Badge variant={entry.action === "full_delivery" ? "default" : "secondary"}>
+                            {entry.action.replace("_", " ").toUpperCase()}
+                          </Badge>
+                          <span className="text-xs text-muted-foreground">
+                            {new Date(entry.created_at).toLocaleString()}
+                          </span>
+                        </div>
+                        {entry.items_delivered?.length > 0 && (
+                          <p className="text-sm mt-1">Items: {entry.items_delivered.join(", ")}</p>
+                        )}
+                        <p className="text-sm text-green-600">Value: ₹{entry.value_collected?.toLocaleString()}</p>
+                        {entry.champ_name && <p className="text-xs text-muted-foreground">By: {entry.champ_name}</p>}
+                        {entry.notes && <p className="text-xs text-muted-foreground mt-1">{entry.notes}</p>}
+                        {entry.proof_image && (
+                          <img src={entry.proof_image} alt="Proof" className="mt-2 w-20 h-20 object-cover rounded" />
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

@@ -866,6 +866,23 @@ async def get_dashboard_stats():
     card_result = await db.delivery_attempts.aggregate(card_pipeline).to_list(1)
     card_collected = card_result[0]["total"] if card_result else 0
     
+    # Pickup stats
+    pickup_pipeline = [
+        {"$group": {"_id": "$pickup_type", "count": {"$sum": 1}}}
+    ]
+    pickup_counts = await db.pickups.aggregate(pickup_pipeline).to_list(100)
+    pickups_by_type = {p["_id"]: p["count"] for p in pickup_counts}
+    
+    pickup_status_pipeline = [
+        {"$group": {"_id": "$status", "count": {"$sum": 1}}}
+    ]
+    pickup_status_counts = await db.pickups.aggregate(pickup_status_pipeline).to_list(100)
+    pickups_by_status = {p["_id"]: p["count"] for p in pickup_status_counts}
+    
+    total_pickups = sum(pickups_by_type.values()) if pickups_by_type else 0
+    pending_pickups = pickups_by_status.get("pending", 0) + pickups_by_status.get("assigned", 0)
+    completed_pickups = pickups_by_status.get("completed", 0) + pickups_by_status.get("partial", 0)
+    
     return {
         "shipments_by_status": status_dict,
         "today_delivered": today_delivered,
@@ -873,7 +890,12 @@ async def get_dashboard_stats():
         "total_active_champs": total_champs,
         "cash_collected": cash_collected,
         "card_collected": card_collected,
-        "total_shipments": sum(status_dict.values()) if status_dict else 0
+        "total_shipments": sum(status_dict.values()) if status_dict else 0,
+        "total_pickups": total_pickups,
+        "pending_pickups": pending_pickups,
+        "completed_pickups": completed_pickups,
+        "pickups_by_type": pickups_by_type,
+        "pickups_by_status": pickups_by_status
     }
 
 # Get available routes
